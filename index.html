@@ -753,7 +753,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         </div>
         <div style="color:var(--text3);font-size:11px">
           Se calculan automáticamente desde los horarios de grúas. Puedes editarlos manualmente si es necesario.
-          Usados en <strong>Chartering → Laytime/SOF</strong> para cómputo de demurrage/despatch.
+          Quedan registrados en el turno y en el informe de la escala.
         </div>
       </div>
     </div>
@@ -1374,8 +1374,8 @@ function getSesion(){if(_sesion)return _sesion;try{_sesion=JSON.parse(sessionSto
 function setSesion(u){_sesion=u;sessionStorage.setItem('ce_sesion',JSON.stringify(u));}
 function clearSesion(){_sesion=null;sessionStorage.removeItem('ce_sesion');}
 const isAdmin=()=>getSesion()?.rol==='admin';
-const puedeVerChartering=()=>{const s=getSesion();return s&&['admin','gerente'].includes(s.rol);};
-function actualizarTabChartering(){const btn=document.getElementById('tab-chartering');if(btn)btn.style.display=puedeVerChartering()?'':'none';}
+
+function actualizarTabChartering(){}
 
 
 // ══════════════════════════════════════════════
