@@ -3855,7 +3855,7 @@ function generarInformePDF(opts){
   // ── TONELAJE CONTRATADO Y REMANENTE ──
   let tonContratado=0;
   if(_escObj&&_escObj.operaciones&&_escObj.operaciones.length){
-    tonContratado=_escObj.operaciones.reduce((s,op)=>s+(parseFloat(op.cantidad)||0),0);
+    tonContratado=_escObj.operaciones.reduce((s,op)=>s+(parseFloat(op.cantidad!=null&&op.cantidad!==''?op.cantidad:op.ton_prog)||0),0);
   }
   const tonRemanente=tonContratado>0?Math.max(0,tonContratado-totalTon):0;
   const pctAvance=tonContratado>0?Math.min(100,Math.round(totalTon/tonContratado*100)):null;
@@ -4068,6 +4068,49 @@ function generarInformePDF(opts){
     }
   }
 
+
+  // ── FICHA TÉCNICA DE LA NAVE (cabecera) ──
+  let _nvInf={};
+  try{_nvInf=(typeof NA!=='undefined'?NA.getAll():[]).find(n=>(n.nombre||'').toLowerCase().trim()===String(naveLabel||'').toLowerCase().trim())||{};}catch(_e){}
+  const _fichaChips=[['IMO',_nvInf.imo],['Tipo',_nvInf.tipo],['Bandera',_nvInf.bandera],['DWT',_nvInf.dwt?Number(_nvInf.dwt).toLocaleString('es-CL')+' t':''],['Eslora',_nvInf.eslora?_nvInf.eslora+' m':''],['Manga',_nvInf.manga?_nvInf.manga+' m':''],['TRG/GT',_nvInf.trg?Number(_nvInf.trg).toLocaleString('es-CL'):''],['Armador',_nvInf.armador]].filter(x=>x[1]);
+  const fichaHtml=_fichaChips.length?'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px">'+_fichaChips.map(c=>'<span style="background:rgba(255,255,255,.08);border:1px solid rgba(212,175,55,.4);border-radius:6px;padding:3px 10px;font-size:10.5px"><span style="color:#D4AF37;font-weight:700">'+c[0]+':</span> <span style="color:#fff">'+c[1]+'</span></span>').join('')+'</div>':'';
+
+  // ── AVANCE Y SALDOS POR BODEGA ──
+  let htmlBodegas='';
+  try{
+    const _splitB=s=>String(s==null?'':s).split(/[,;]+/).map(x=>x.trim()).filter(Boolean);
+    const _plan={},_ejec={};
+    if(_escObj&&Array.isArray(_escObj.operaciones)){
+      _escObj.operaciones.forEach(op=>{
+        const t=parseFloat(op.cantidad!=null&&op.cantidad!==''?op.cantidad:op.ton_prog)||0;
+        if(!t)return;
+        const bs=_splitB(op.bodega);
+        if(!bs.length){_plan['S/B']=(_plan['S/B']||0)+t;return;}
+        bs.forEach(b=>_plan[b]=(_plan[b]||0)+t/bs.length);
+      });
+    }
+    turnos.forEach(t=>(t.cuadrillas||[]).forEach(c=>{
+      const tn=parseFloat(c.ton)||0;if(!tn)return;
+      const bs=_splitB(c.bodega);
+      if(!bs.length){_ejec['S/B']=(_ejec['S/B']||0)+tn;return;}
+      bs.forEach(b=>_ejec[b]=(_ejec[b]||0)+tn/bs.length);
+    }));
+    const _keysB=[...new Set([...Object.keys(_plan),...Object.keys(_ejec)])].sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true}));
+    if(_keysB.length){
+      const _fN=v=>Math.round(v).toLocaleString('es-CL');
+      let _tp=0,_te=0;
+      const _rowsB=_keysB.map(b=>{
+        const p=_plan[b]||0,e=_ejec[b]||0;_tp+=p;_te+=e;
+        const saldo=p>0?Math.max(0,p-e):0;
+        const pct=p>0?Math.min(100,Math.round(e/p*100)):null;
+        const bar=pct==null?'—':'<div style="background:#eee;border-radius:4px;height:9px;width:110px;display:inline-block;vertical-align:middle;overflow:hidden"><div style="background:'+(pct>=100?'#059669':'#8C6D2C')+';height:9px;width:'+pct+'%"></div></div> <b style="margin-left:4px">'+pct+'%</b>';
+        return '<tr><td><b>'+(b==='S/B'?'Sin bodega':'Bodega '+b)+'</b></td><td style="text-align:right">'+(p?_fN(p):'—')+'</td><td style="text-align:right">'+_fN(e)+'</td><td style="text-align:right">'+(p?_fN(saldo):'—')+'</td><td>'+bar+'</td></tr>';
+      }).join('');
+      const _pctT=_tp>0?Math.min(100,Math.round(_te/_tp*100)):null;
+      htmlBodegas='<div class="section"><h2>📦 Avance y Saldos por Bodega</h2><table><thead><tr><th>Bodega</th><th style="text-align:right">Programado (t)</th><th style="text-align:right">Ejecutado (t)</th><th style="text-align:right">Saldo (t)</th><th>Avance</th></tr></thead><tbody>'+_rowsB+'<tr><td><b>TOTAL</b></td><td style="text-align:right"><b>'+(_tp?_fN(_tp):'—')+'</b></td><td style="text-align:right"><b>'+_fN(_te)+'</b></td><td style="text-align:right"><b>'+(_tp?_fN(Math.max(0,_tp-_te)):'—')+'</b></td><td><b>'+(_pctT==null?'—':_pctT+'%')+'</b></td></tr></tbody></table></div>';
+    }
+  }catch(_eB){}
+
   const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
 <title>Informe Ejecutivo — ${naveLabel}</title>
 <style>
@@ -4107,7 +4150,7 @@ function generarInformePDF(opts){
   <div class="cover-title">Informe Ejecutivo de Operaciones</div>
   <div style="font-size:15px;font-weight:600;color:#E8D9AE;margin-top:6px">${naveLabel} &nbsp;·&nbsp; ${puertoLabel}</div>
   <div class="cover-meta">Período: ${fmt2(fechaMin)} al ${fmt2(fechaMax)} &nbsp;·&nbsp; ${turnos.length} turno${turnos.length!==1?'s':''} &nbsp;·&nbsp; Generado: ${new Date().toLocaleString('es-CL')}</div>
-  <div class="cover-meta" style="margin-top:6px">${voyageLabel?'⚓ N° Viaje: <b style="color:#E8D9AE">'+voyageLabel+'</b> &nbsp;·&nbsp; ':''}⏳ Espera de atraque (ETA real → ETB real): <b style="color:${esperaHdr!=='—'?'#fbbf24':'#94a3b8'}">${esperaHdr}</b></div>
+  <div class="cover-meta" style="margin-top:6px">${voyageLabel?'⚓ N° Viaje: <b style="color:#E8D9AE">'+voyageLabel+'</b> &nbsp;·&nbsp; ':''}⏳ Espera de atraque (ETA real → ETB real): <b style="color:${esperaHdr!=='—'?'#fbbf24':'#94a3b8'}">${esperaHdr}</b></div>${fichaHtml}
 </div>
 <div style="padding:0 2px">
 <div class="kpi-row">
@@ -4121,6 +4164,7 @@ ${_barraProgreso}
 <div class="section"><h2>📊 Detalle de Turnos</h2>
 <table><thead><tr><th>Fecha</th><th>Turno</th><th>Horario</th><th>Ton.</th><th>Acum.</th><th>Bruto</th><th>Neto</th><th>Det.</th><th>Tipos Detención</th><th>Registrado</th></tr></thead>
 <tbody>${filasTurnos}</tbody></table></div>
+${htmlBodegas}
 ${htmlEscala}
 ${htmlDetenciones}
 ${htmlNovedades}
