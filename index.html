@@ -4884,7 +4884,7 @@ function handleExcelFile(file){
         if(!raw||raw.length<7)return;
 
         // ── Extract ship name + voyage from row 3 (index 3) ──
-        // Format: "Condor Bilbao  |  Voyage: 2601"
+        // Format: "MV Ejemplo  |  Voyage: 2601"
         let naveName='',voyageNum='';
         const row3=String(raw[3]?raw[3][0]||'':'').trim();
         const m=row3.match(/^(.+?)\s*\|\s*Voyage[:\s]+(\S+)/i);
@@ -4892,7 +4892,7 @@ function handleExcelFile(file){
           naveName=m[1].trim();
           voyageNum=m[2].trim();
         } else {
-          // Fallback: row 0 "⚓  SALA DE CONTROL  ·  Condor Bilbao  ·  VOYAGE 2601"
+          // Fallback: row 0 "⚓  SALA DE CONTROL  ·  MV Ejemplo  ·  VOYAGE 2601"
           const row0=String(raw[0]?raw[0][0]||'':'');
           const m0=row0.match(/·\s*(.+?)\s*·\s*VOYAGE\s+(\S+)/i);
           if(m0){naveName=m0[1].trim();voyageNum=m0[2].trim();}
