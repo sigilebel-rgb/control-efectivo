@@ -334,14 +334,6 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         <div class="fgrp"><label>Cliente / Contrato</label>
           <select id="mm-cliente">
             <option value="">— Sin contrato —</option>
-            <option value="codelco_concentrado">Codelco — Concentrado Cobre</option>
-            <option value="codelco_catodos">Codelco — Catodos Cobre</option>
-            <option value="bhp_concentrado">BHP — Concentrado</option>
-            <option value="bhp_catodos">BHP — Cátodos Cobre</option>
-            <option value="kmp_harina">KMP — Harina Pescado</option>
-            <option value="trafigura_concentrado_cobre">Trafigura — Concentrado Cobre</option>
-            <option value="trafigura_concentrado_zinc">Trafigura — Concentrado Zinc</option>
-            <option value="candelaria_coquimbo">Candelaria — Coquimbo</option>
           </select>
         </div>
       </div>
@@ -611,7 +603,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
           <div class="fgrp"><label>IMO / Matrícula</label><input id="nn_imo" placeholder="Ej: IMO 9876543"></div>
           <div class="fgrp"><label>Tipo</label>
             <select id="nn_tipo"><option>Bulkcarrier</option><option>Portacontenedores</option><option>Multipropósito</option><option>Tanquero</option><option>Ro-Ro</option><option>General Cargo</option><option>Otro</option></select></div>
-          <div class="fgrp"><label>DWT</label><input type="number" id="nn_dwt" placeholder="Ej: 28000"></div>
+          <div class="fgrp"><label>DWT (t)</label><input type="number" id="nn_dwt" placeholder="Ej: 28000"></div>
+          <div class="fgrp"><label>Eslora (m)</label><input type="number" step="0.01" id="nn_eslora" placeholder="Ej: 179.90"></div>
+          <div class="fgrp"><label>Manga (m)</label><input type="number" step="0.01" id="nn_manga" placeholder="Ej: 28.20"></div>
+          <div class="fgrp"><label>TRG / GT</label><input type="number" id="nn_trg" placeholder="Ej: 19800"></div>
           <div class="fgrp"><label>Armador / Operador</label><input id="nn_armador" placeholder="Nombre empresa"></div>
           <div class="fgrp"><label>Bandera</label><input id="nn_bandera" placeholder="Ej: Panamá"></div>
         </div>
@@ -1348,9 +1343,6 @@ const TA={
         const normNave=s=>{
           if(!s||s.trim()===''||s==='undefined')return s;
           const l=s.toLowerCase().trim();
-          if(l.includes('valparai'))return 'Cóndor Valparaíso';
-          if(l.includes('magallan'))return 'Cóndor Magallanes';
-          if(l.includes('bilbao'))return 'Cóndor Bilbao';
           return s;
         };
         merged=merged.map(t=>{if(!t.nave||t.nave==='undefined'||t.nave===''){const nv=NA.getAll().find(n=>n.id===t.nave_id||n.id===t.nave);if(nv)t.nave=nv.nombre||nv.name||t.nave_id;}return{...t,nave:normNave(t.nave||t.nave_id||'')};}).filter(t=>t.nave&&t.nave!=='undefined'&&t.nave!=='');
@@ -1524,9 +1516,9 @@ function guardarNave(){
   showSaving('Guardando nave '+nombre+'...');
   setTimeout(()=>{
     try{
-      const n={id:uid(),nombre,imo:document.getElementById('nn_imo').value,tipo:document.getElementById('nn_tipo').value,dwt:+document.getElementById('nn_dwt').value||0,armador:document.getElementById('nn_armador').value,bandera:document.getElementById('nn_bandera').value,creado:new Date().toISOString()};
+      const n={id:uid(),nombre,imo:document.getElementById('nn_imo').value,tipo:document.getElementById('nn_tipo').value,dwt:+document.getElementById('nn_dwt').value||0,eslora:+document.getElementById('nn_eslora').value||0,manga:+document.getElementById('nn_manga').value||0,trg:+document.getElementById('nn_trg').value||0,armador:document.getElementById('nn_armador').value,bandera:document.getElementById('nn_bandera').value,creado:new Date().toISOString()};
       NA.add(n);hideSaving();
-      ['nn_nombre','nn_imo','nn_dwt','nn_armador','nn_bandera'].forEach(id=>document.getElementById(id).value='');
+      ['nn_nombre','nn_imo','nn_dwt','nn_eslora','nn_manga','nn_trg','nn_armador','nn_bandera'].forEach(id=>document.getElementById(id).value='');
       document.getElementById('form-nave').style.display='none';
       renderNaves();showAlert('✅ Nave registrada: '+nombre,'ok');
     }catch(e){hideSaving();showAlert('Error: '+e.message,'err');}
@@ -2802,7 +2794,7 @@ async function guardarTurno(){
     const _cuadCheck=(typeof _metId!=='undefined'&&_metId&&document.getElementById('modal-editar-turno')&&document.getElementById('modal-editar-turno').style.display!=='none')?_metCuad:cuadrillas;
     const _sinCliente=_cuadCheck.filter(c=>c.ton>0&&!c.cliente);
     if(_sinCliente.length>0){
-      alert('⚠ Hay '+_sinCliente.length+' cuadrilla(s) con toneladas sin contrato asignado.\nSelecciona el contrato (BHP/Codelco) en el campo Contrato de cada cuadrilla antes de guardar.');
+      alert('⚠ Hay '+_sinCliente.length+' cuadrilla(s) con toneladas sin contrato asignado.\nSelecciona el contrato en el campo Contrato de cada cuadrilla antes de guardar.');
       return;
     }
   }
@@ -3626,7 +3618,7 @@ function eliminarTurno(id){
 function normalizaNave(n){
   if(!n) return n;
   n=n.trim();
-  // Quitar sufijos de viaje concatenados (ej: "Cóndor Valparaíso V.2606", "V.260S", etc.)
+  // Quitar sufijos de viaje concatenados (ej: "MV Ejemplo V.2606", "V.260S", etc.)
   n=n.replace(/\s+V\.\w{3,}.*$/i,'').replace(/\s+Viaje\s+\d+.*$/i,'').trim();
   // Normalizar acentos genéricamente: buscar naves conocidas en NA (registro de naves)
   // para cualquier buque presente o futuro
@@ -3639,12 +3631,7 @@ function normalizaNave(n){
     if(match) return match; // devuelve el nombre canónico del registro
   }catch(e){}
   // Fallback mapa estático para cuando NA no está disponible aún
-  const MAP={
-    'condor magallanes':'Cóndor Magallanes','cóndor magallanes':'Cóndor Magallanes',
-    'condor valparaiso':'Cóndor Valparaíso','cóndor valparaiso':'Cóndor Valparaíso',
-    'condor valparaíso':'Cóndor Valparaíso','cóndor valparaíso':'Cóndor Valparaíso',
-    'condor bilbao':'Cóndor Bilbao','cóndor bilbao':'Cóndor Bilbao'
-  };
+  const MAP={};
   return MAP[n.toLowerCase()]||n;
 }
 
@@ -5066,150 +5053,7 @@ function capitalizePuerto(str){
 }
 
 // ─── BASE DE DATOS DE PUERTOS ───
-const PUERTOS_DB = {
-  // CHILE
-  'arica':          {pais:'Chile',region:'Norte',terminal:'Puerto Arica'},
-  'iquique':        {pais:'Chile',region:'Norte',terminal:'Puerto Iquique'},
-  'antofagasta':    {pais:'Chile',region:'Norte',terminal:'Puerto Antofagasta'},
-  'angamos':        {pais:'Chile',region:'Norte',terminal:'Puerto Angamos'},
-  'mejillones':     {pais:'Chile',region:'Norte',terminal:'Puerto Mejillones'},
-  'tocopilla':      {pais:'Chile',region:'Norte',terminal:'Puerto Tocopilla'},
-  'calama':         {pais:'Chile',region:'Norte',terminal:''},
-  'coquimbo':       {pais:'Chile',region:'Centro-Norte',terminal:'Puerto Coquimbo'},
-  'los vilos':      {pais:'Chile',region:'Centro-Norte',terminal:''},
-  'valparaiso':     {pais:'Chile',region:'Central',terminal:'TPS / TCVAL'},
-  'san antonio':    {pais:'Chile',region:'Central',terminal:'TCSA / Puerto Central'},
-  'talcahuano':     {pais:'Chile',region:'Sur',terminal:'SVTI / ESMETAL'},
-  'huachipato':     {pais:'Chile',region:'Sur',terminal:''},
-  'coronel':        {pais:'Chile',region:'Sur',terminal:'Puerto Coronel'},
-  'lirquen':        {pais:'Chile',region:'Sur',terminal:'Puerto Lirquen'},
-  'puerto montt':   {pais:'Chile',region:'Sur',terminal:''},
-  'punta arenas':   {pais:'Chile',region:'Austral',terminal:''},
-  // PERÚ
-  'callao':         {pais:'Perú',region:'Costa Central',terminal:'APM / DP World Callao'},
-  'chancay':        {pais:'Perú',region:'Costa Central',terminal:'Puerto Chancay (COSCO)'},
-  'paita':          {pais:'Perú',region:'Norte',terminal:'TPE'},
-  'salaverry':      {pais:'Perú',region:'Norte',terminal:'Puerto Salaverry'},
-  'chimbote':       {pais:'Perú',region:'Norte',terminal:'Puerto Chimbote'},
-  'pisco':          {pais:'Perú',region:'Sur',terminal:'Puerto General San Martín'},
-  'matarani':       {pais:'Perú',region:'Sur',terminal:'TISur'},
-  'ilo':            {pais:'Perú',region:'Sur',terminal:''},
-  // BOLIVIA
-  'ilo':            {pais:'Perú',region:'Sur',terminal:''},
-  // ECUADOR
-  'guayaquil':      {pais:'Ecuador',region:'Costa',terminal:'APM Guayaquil'},
-  'esmeraldas':     {pais:'Ecuador',region:'Costa Norte',terminal:''},
-  'manta':          {pais:'Ecuador',region:'Costa',terminal:''},
-  // COLOMBIA
-  'buenaventura':   {pais:'Colombia',region:'Pacífico',terminal:'TCBUEN / SPRC'},
-  'barranquilla':   {pais:'Colombia',region:'Caribe',terminal:''},
-  'cartagena':      {pais:'Colombia',region:'Caribe',terminal:'SPRC / Contecar'},
-  'santa marta':    {pais:'Colombia',region:'Caribe',terminal:''},
-  // VENEZUELA
-  'la guaira':      {pais:'Venezuela',region:'Caribe',terminal:''},
-  'puerto cabello': {pais:'Venezuela',region:'Caribe',terminal:''},
-  // PANAMÁ
-  'balboa':         {pais:'Panamá',region:'Pacífico',terminal:'PSA Panama'},
-  'cristobal':      {pais:'Panamá',region:'Atlántico',terminal:''},
-  'manzanillo':     {pais:'Panamá',region:'Atlántico',terminal:'MIT'},
-  // BRASIL
-  'santos':         {pais:'Brasil',region:'São Paulo',terminal:'Ecoporto / APM / DP World'},
-  'paranagua':      {pais:'Brasil',region:'Paraná',terminal:'TCP'},
-  'rio de janeiro': {pais:'Brasil',region:'Rio',terminal:''},
-  'angra dos reis': {pais:'Brasil',region:'Rio',terminal:''},
-  'vitoria':        {pais:'Brasil',region:'Espírito Santo',terminal:''},
-  'itajai':         {pais:'Brasil',region:'Santa Catarina',terminal:''},
-  'navegantes':     {pais:'Brasil',region:'Santa Catarina',terminal:''},
-  'rio grande':     {pais:'Brasil',region:'Rio Grande do Sul',terminal:''},
-  'fortaleza':      {pais:'Brasil',region:'Nordeste',terminal:''},
-  // ARGENTINA
-  'buenos aires':   {pais:'Argentina',region:'Río de la Plata',terminal:'Exolgan / TRP'},
-  'bahia blanca':   {pais:'Argentina',region:'Patagonia Norte',terminal:''},
-  'rosario':        {pais:'Argentina',region:'Litoral',terminal:''},
-  // URUGUAY
-  'montevideo':     {pais:'Uruguay',region:'Río de la Plata',terminal:'TCP / Montecon'},
-  // MÉXICO
-  'manzanillo':     {pais:'México',region:'Pacífico',terminal:''},
-  'lazaro cardenas':{pais:'México',region:'Pacífico',terminal:''},
-  'altamira':       {pais:'México',region:'Golfo',terminal:''},
-  'veracruz':       {pais:'México',region:'Golfo',terminal:''},
-  // CENTROAMÉRICA
-  'puerto quetzal': {pais:'Guatemala',region:'Pacífico',terminal:''},
-  'corinto':        {pais:'Nicaragua',region:'Pacífico',terminal:''},
-  'acajutla':       {pais:'El Salvador',region:'Pacífico',terminal:''},
-  'caldera':        {pais:'Costa Rica',region:'Pacífico',terminal:''},
-  'limon':          {pais:'Costa Rica',region:'Caribe',terminal:''},
-  // CARIBE
-  'kingston':       {pais:'Jamaica',region:'Caribe',terminal:'Kingston Container Terminal'},
-  'freeport':       {pais:'Bahamas',region:'Caribe',terminal:''},
-  'barahona':       {pais:'Rep. Dominicana',region:'Caribe Sur',terminal:''},
-  'santo domingo':  {pais:'Rep. Dominicana',region:'Caribe',terminal:''},
-  // EUROPA - ESPAÑA
-  'bilbao':         {pais:'España',region:'País Vasco',terminal:'Nervión / TEPSA'},
-  'santander':      {pais:'España',region:'Cantabria',terminal:''},
-  'vigo':           {pais:'España',region:'Galicia',terminal:''},
-  'barcelona':      {pais:'España',region:'Cataluña',terminal:'TCB / BEST'},
-  'valencia':       {pais:'España',region:'Valencia',terminal:'MSC / Noatum'},
-  'algeciras':      {pais:'España',region:'Andalucía',terminal:'APM / TTT'},
-  'cadiz':          {pais:'España',region:'Andalucía',terminal:''},
-  'huelva':         {pais:'España',region:'Andalucía',terminal:''},
-  'aviles':         {pais:'España',region:'Asturias',terminal:''},
-  // EUROPA - ATLÁNTICO
-  'rotterdam':      {pais:'Países Bajos',region:'South Holland',terminal:'ECT / APM / Euromax'},
-  'amsterdam':      {pais:'Países Bajos',region:'North Holland',terminal:''},
-  'antwerpen':      {pais:'Bélgica',region:'Flandes',terminal:'PSA / DP World / MSC'},
-  'antwerp':        {pais:'Bélgica',region:'Flandes',terminal:'PSA / DP World / MSC'},
-  'amberes':        {pais:'Bélgica',region:'Flandes',terminal:'PSA / DP World'},
-  'dunkerque':      {pais:'Francia',region:'Hauts-de-France',terminal:'Terminal Grande-Synthe'},
-  'le havre':       {pais:'Francia',region:'Normandía',terminal:'GMP / TNMSC'},
-  'nantes':         {pais:'Francia',region:'Pays de la Loire',terminal:''},
-  'burdeos':        {pais:'Francia',region:'Nouvelle-Aquitaine',terminal:''},
-  'bremen':         {pais:'Alemania',region:'Bremen',terminal:'BLG / Eurogate'},
-  'bremerhaven':    {pais:'Alemania',region:'Bremen',terminal:'Eurogate / NTB'},
-  'hamburg':        {pais:'Alemania',region:'Hamburg',terminal:'HHLA / Eurogate'},
-  'hamburgo':       {pais:'Alemania',region:'Hamburg',terminal:'HHLA / Eurogate'},
-  'kiel':           {pais:'Alemania',region:'Schleswig-Holstein',terminal:''},
-  'rostock':        {pais:'Alemania',region:'Mecklenburg',terminal:''},
-  'gdansk':         {pais:'Polonia',region:'Pomerania',terminal:'DCT'},
-  'gdynia':         {pais:'Polonia',region:'Pomerania',terminal:''},
-  'gothenburg':     {pais:'Suecia',region:'Västra Götaland',terminal:'APM'},
-  'gotemburgo':     {pais:'Suecia',region:'Västra Götaland',terminal:'APM'},
-  'oslo':           {pais:'Noruega',region:'Oslo',terminal:''},
-  'felixstowe':     {pais:'Reino Unido',region:'Suffolk',terminal:'Felixstowe Port'},
-  'southampton':    {pais:'Reino Unido',region:'Hampshire',terminal:''},
-  'tilbury':        {pais:'Reino Unido',region:'Essex',terminal:''},
-  'london gateway': {pais:'Reino Unido',region:'Essex',terminal:''},
-  'liverpool':      {pais:'Reino Unido',region:'Merseyside',terminal:''},
-  // EUROPA - MEDITERRÁNEO
-  'genova':         {pais:'Italia',region:'Liguria',terminal:''},
-  'livorno':        {pais:'Italia',region:'Toscana',terminal:''},
-  'napoles':        {pais:'Italia',region:'Campania',terminal:''},
-  'trieste':        {pais:'Italia',region:'Friuli',terminal:''},
-  'pireo':          {pais:'Grecia',region:'Ática',terminal:'Cosco Piraeus'},
-  'marsella':       {pais:'Francia',region:'PACA',terminal:''},
-  'gioia tauro':    {pais:'Italia',region:'Calabria',terminal:'Medcenter'},
-  // ASIA / AFRICA
-  'singapore':      {pais:'Singapur',region:'',terminal:'PSA Singapore'},
-  'singapur':       {pais:'Singapur',region:'',terminal:'PSA Singapore'},
-  'port klang':     {pais:'Malasia',region:'Selangor',terminal:'Westports / Northport'},
-  'shanghai':       {pais:'China',region:'Shanghai',terminal:'SIPG'},
-  'ningbo':         {pais:'China',region:'Zhejiang',terminal:''},
-  'tianjin':        {pais:'China',region:'Tianjin',terminal:''},
-  'shenzhen':       {pais:'China',region:'Guangdong',terminal:''},
-  'hong kong':      {pais:'China',region:'RAEHK',terminal:'Kwai Tsing'},
-  'busan':          {pais:'Corea del Sur',region:'Busan',terminal:'Hanjin / PNC'},
-  'tokyo':          {pais:'Japón',region:'Tokio',terminal:''},
-  'yokohama':       {pais:'Japón',region:'Kanagawa',terminal:''},
-  'durban':         {pais:'Sudáfrica',region:'KwaZulu-Natal',terminal:'DCT'},
-  'cape town':      {pais:'Sudáfrica',region:'Western Cape',terminal:''},
-  'lagos':          {pais:'Nigeria',region:'Lagos',terminal:''},
-  'mombasa':        {pais:'Kenia',region:'Costa',terminal:''},
-  'dakar':          {pais:'Senegal',region:'Dakar',terminal:''},
-  'casablanca':     {pais:'Marruecos',region:'Casablanca',terminal:''},
-  // CANAL / ZONAS ESPECIALES  
-  'punta dungenes': {pais:'Argentina',region:'Estrecho de Magallanes',terminal:''},
-  'punta dungeness':{pais:'Argentina',region:'Estrecho de Magallanes',terminal:''},
-};
+const PUERTOS_DB = {};
 
 function buscarPuertoDB(nombre){
   const key=nombre.toLowerCase().trim();
@@ -5928,12 +5772,7 @@ function toggleTurnosEscala(vId, eId) {
 // TEMP FIX: Corregir nombres de naves en Supabase
 window.fixNaveNames = async function() {
   if (!window.SB) { console.error('SB no disponible'); return; }
-  const correcciones = [
-    { malo: 'Condor Magallanes', bueno: 'Cóndor Magallanes' },
-    { malo: 'Condor Valparaíso', bueno: 'Cóndor Valparaíso' },
-    { malo: 'condor valparaiso', bueno: 'Cóndor Valparaíso' },
-    { malo: 'Cóndor Valparaiso', bueno: 'Cóndor Valparaíso' },
-  ];
+  const correcciones = [];
   for (let c of correcciones) {
     let r = await window.SB.from('turnos').update({nave: c.bueno}).eq('nave', c.malo);
     console.log('Fix [' + c.malo + '] ->', c.bueno, ':', r.error ? r.error.message : 'OK');
