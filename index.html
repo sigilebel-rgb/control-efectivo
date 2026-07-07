@@ -4797,6 +4797,10 @@ async function syncAllFromDB(){
 
 async function iniciarApp(){
   // Show info banner if running from file:// protocol
+  if(!localStorage.getItem('ce_reset_v1')){
+    try{['ce_naves_ls','ce_viajes_ls','ce_turnos_ls'].forEach(k=>localStorage.removeItem(k));}catch(e){}
+    try{localStorage.setItem('ce_reset_v1','1');}catch(e){}
+  }
   if(window.location.protocol==='file:'){
     const b=document.getElementById('file-banner');
     if(b)b.style.display='flex';
