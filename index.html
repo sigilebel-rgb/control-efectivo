@@ -1311,11 +1311,11 @@ const UA={
     const arr=this.getAll();
     const adminExiste=arr.find(u=>u.id==='admin-default');
     if(!adminExiste){
-      this.upsert({id:'admin-default',nombre:'Lebel',email:'sigilebel@hotmail.com',pass:btoa('226Gatos$1972'),rol:'admin',creado:new Date().toISOString(),cambiarPass:false});
+      this.upsert({id:'admin-default',nombre:'Lebel',email:'sigilebel@hotmail.com',pass:btoa('123456'),rol:'admin',creado:new Date().toISOString(),cambiarPass:false});
     } else {
       adminExiste.email='sigilebel@hotmail.com';
       adminExiste.nombre='Lebel';
-      adminExiste.pass=btoa('226Gatos$1972');
+      adminExiste.pass=btoa('123456');
       adminExiste.cambiarPass=false;
       this.save(arr);
     }
