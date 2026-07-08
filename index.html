@@ -4142,6 +4142,7 @@ function generarInformePDF(opts){
       });
       (t.detenciones||[]).forEach(d=>{
         const mm=parseFloat(d.min)||0;if(!mm)return;
+        if(d.resp!=='Nave')return; // criterio: el rendimiento mide al terminal — Neto descuenta solo resp. Nave
         const bo=(d.bodega==null||d.bodega===''||d.bodega==='Todas')?'Todas':String(d.bodega);
         if(bo==='Todas'){_dTodas+=mm;return;}
         const bs=_splitB(bo);
@@ -4161,13 +4162,13 @@ function generarInformePDF(opts){
         const gm=_gmin[b]||0;const dm=(_dmin[b]||0)+(gm>0?_dTodas:0);
         const nm=Math.max(0,gm-dm);_tgm+=gm;_tnm+=nm;
         const hG=gm>0?(gm/60).toFixed(1):'—';
-        const dTx=gm>0?Math.round(dm)+"'":'—';
+        const rB=(gm>0&&e>0)?Math.round(e/(gm/60)).toLocaleString('es-CL'):'—';
         const rN=(nm>0&&e>0)?Math.round(e/(nm/60)).toLocaleString('es-CL'):'—';
-        return '<tr><td><b>'+(b==='S/B'?'Sin bodega':'Bodega '+b)+'</b></td><td style="text-align:right">'+(p?_fN(p):'—')+'</td><td style="text-align:right">'+_fN(e)+'</td><td style="text-align:right">'+(p?_fN(saldo):'—')+'</td><td>'+bar+'</td><td style="text-align:right">'+hG+'</td><td style="text-align:right">'+dTx+'</td><td style="text-align:right"><b>'+rN+'</b></td></tr>';
+        return '<tr><td><b>'+(b==='S/B'?'Sin bodega':'Bodega '+b)+'</b></td><td style="text-align:right">'+(p?_fN(p):'—')+'</td><td style="text-align:right">'+_fN(e)+'</td><td style="text-align:right">'+(p?_fN(saldo):'—')+'</td><td>'+bar+'</td><td style="text-align:right">'+hG+'</td><td style="text-align:right"><b>'+rB+'</b></td><td style="text-align:right"><b>'+rN+'</b></td></tr>';
       }).join('');
       const _pctT=_tp>0?Math.min(100,Math.round(_te/_tp*100)):null;
       const _rGprom=(_tnm>0&&_te>0)?Math.round(_te/(_tnm/60)).toLocaleString('es-CL'):'—';
-      htmlBodegas='<div class="section"><h2>📦 Avance, Saldos y Rendimiento por Bodega / Grúa</h2><table><thead><tr><th>Bodega</th><th style="text-align:right">Prog. (t)</th><th style="text-align:right">Ejec. (t)</th><th style="text-align:right">Saldo (t)</th><th>Avance</th><th style="text-align:right">Hrs grúa</th><th style="text-align:right">Det.</th><th style="text-align:right">Neto (t/h)</th></tr></thead><tbody>'+_rowsB+'<tr><td><b>TOTAL</b></td><td style="text-align:right"><b>'+(_tp?_fN(_tp):'—')+'</b></td><td style="text-align:right"><b>'+_fN(_te)+'</b></td><td style="text-align:right"><b>'+(_tp?_fN(Math.max(0,_tp-_te)):'—')+'</b></td><td><b>'+(_pctT==null?'—':_pctT+'%')+'</b></td><td style="text-align:right"><b>'+(_tgm>0?(_tgm/60).toFixed(1):'—')+'</b></td><td style="text-align:right"><b>'+(_tgm>0?Math.round(_tgm-_tnm)+"'":'—')+'</b></td><td style="text-align:right"><b>'+_rGprom+'</b></td></tr></tbody></table><div style="font-size:9.5px;color:#777;margin-top:4px">Neto (t/h) por bodega = toneladas ÷ (horas de grúa − detenciones propias − detenciones a toda la nave). El total corresponde al rendimiento promedio por grúa efectiva.</div></div>';
+      htmlBodegas='<div class="section"><h2>📦 Avance, Saldos y Rendimiento por Bodega / Grúa</h2><table><thead><tr><th>Bodega</th><th style="text-align:right">Prog. (t)</th><th style="text-align:right">Ejec. (t)</th><th style="text-align:right">Saldo (t)</th><th>Avance</th><th style="text-align:right">Hrs grúa</th><th style="text-align:right">Bruto (t/h)</th><th style="text-align:right">Neto (t/h)</th></tr></thead><tbody>'+_rowsB+'<tr><td><b>TOTAL</b></td><td style="text-align:right"><b>'+(_tp?_fN(_tp):'—')+'</b></td><td style="text-align:right"><b>'+_fN(_te)+'</b></td><td style="text-align:right"><b>'+(_tp?_fN(Math.max(0,_tp-_te)):'—')+'</b></td><td><b>'+(_pctT==null?'—':_pctT+'%')+'</b></td><td style="text-align:right"><b>'+(_tgm>0?(_tgm/60).toFixed(1):'—')+'</b></td><td style="text-align:right"><b>'+((_tgm>0&&_te>0)?Math.round(_te/(_tgm/60)).toLocaleString('es-CL'):'—')+'</b></td><td style="text-align:right"><b>'+_rGprom+'</b></td></tr></tbody></table><div style="font-size:9.5px;color:#777;margin-top:4px">Bruto = ton ÷ horas de grúa. Neto = descuenta detenciones resp. Nave (propias de la bodega + las que afectan a toda la nave). El total corresponde al rendimiento promedio por grúa.</div></div>';
     }
   }catch(_eB){}
 
