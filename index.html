@@ -4131,22 +4131,32 @@ function generarInformePDF(opts){
       });
     }
     const _minSpan=(a,b)=>{if(!a||!b)return 0;const p1=String(a).split(':').map(Number),p2=String(b).split(':').map(Number);let d=(p2[0]*60+p2[1])-(p1[0]*60+p1[1]);if(d<0)d+=1440;return d;};
-    const _gmin={},_dmin={};let _dTodas=0;
+    const _absMin=(hhmm,anchor)=>{const p=String(hhmm||'').split(':').map(Number);if(p.length<2||isNaN(p[0])||isNaN(p[1]))return null;const a=String(anchor||'00:00').split(':').map(Number);let v=(p[0]*60+p[1])-((a[0]||0)*60+(a[1]||0));if(v<0)v+=1440;return v;};
+    const _gmin={},_nmin={};
     turnos.forEach(t=>{
+      const _anc=t.hi||'00:00';
       (t.cuadrillas||[]).forEach(c=>{
         const tn=parseFloat(c.ton)||0;
         const bs=_splitB(c.bodega);
         if(tn){if(!bs.length){_ejec['S/B']=(_ejec['S/B']||0)+tn;}else{bs.forEach(b=>_ejec[b]=(_ejec[b]||0)+tn/bs.length);}}
-        const mm=_minSpan(c.hora_ini,c.hora_fin);
-        if(mm&&bs.length)bs.forEach(b=>_gmin[b]=(_gmin[b]||0)+mm/bs.length);
-      });
-      (t.detenciones||[]).forEach(d=>{
-        const mm=parseFloat(d.min)||0;if(!mm)return;
-        if(d.resp!=='Nave')return; // criterio: el rendimiento mide al terminal — Neto descuenta solo resp. Nave
-        const bo=(d.bodega==null||d.bodega===''||d.bodega==='Todas')?'Todas':String(d.bodega);
-        if(bo==='Todas'){_dTodas+=mm;return;}
-        const bs=_splitB(bo);
-        bs.forEach(b=>_dmin[b]=(_dmin[b]||0)+mm/bs.length);
+        const gm=_minSpan(c.hora_ini,c.hora_fin);
+        if(!gm||!bs.length)return;
+        const ci=_absMin(c.hora_ini,_anc);if(ci==null)return;
+        const cf=ci+gm;
+        bs.forEach(b=>{
+          let det=0;
+          (t.detenciones||[]).forEach(d=>{
+            if(d.resp!=='Nave')return; // criterio: el rendimiento mide al terminal — Neto descuenta solo resp. Nave
+            const bo=(d.bodega==null||d.bodega===''||d.bodega==='Todas')?'Todas':String(d.bodega);
+            if(bo!=='Todas'&&_splitB(bo).indexOf(b)<0)return;
+            const dm=parseFloat(d.min)||0;
+            const di=_absMin(d.hi,_anc);
+            if(di==null||!dm)return;
+            det+=Math.max(0,Math.min(cf,di+dm)-Math.max(ci,di)); // solo la superposición real con esta cuadrilla
+          });
+          _gmin[b]=(_gmin[b]||0)+gm/bs.length;
+          _nmin[b]=(_nmin[b]||0)+Math.max(0,gm-Math.min(det,gm))/bs.length;
+        });
       });
     });
     const _keysB=[...new Set([...Object.keys(_plan),...Object.keys(_ejec)])].sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true}));
@@ -4159,11 +4169,11 @@ function generarInformePDF(opts){
         const saldo=p>0?Math.max(0,p-e):0;
         const pct=p>0?Math.min(100,Math.round(e/p*100)):null;
         const bar=pct==null?'—':'<div style="background:#eee;border-radius:4px;height:9px;width:90px;display:inline-block;vertical-align:middle;overflow:hidden"><div style="background:'+(pct>=100?'#059669':'#8C6D2C')+';height:9px;width:'+pct+'%"></div></div> <b style="margin-left:4px">'+pct+'%</b>';
-        const gm=_gmin[b]||0;const dm=(_dmin[b]||0)+(gm>0?_dTodas:0);
-        const nm=Math.max(0,gm-dm);_tgm+=gm;_tnm+=nm;
+        const gm=_gmin[b]||0;const nm=Math.min(gm,_nmin[b]||0);
+        _tgm+=gm;_tnm+=nm;
         const hG=gm>0?(gm/60).toFixed(1):'—';
         const rB=(gm>0&&e>0)?Math.round(e/(gm/60)).toLocaleString('es-CL'):'—';
-        const rN=(nm>0&&e>0)?Math.round(e/(nm/60)).toLocaleString('es-CL'):'—';
+        const rN=(nm>=10&&e>0)?Math.round(e/(nm/60)).toLocaleString('es-CL'):'—';
         return '<tr><td><b>'+(b==='S/B'?'Sin bodega':'Bodega '+b)+'</b></td><td style="text-align:right">'+(p?_fN(p):'—')+'</td><td style="text-align:right">'+_fN(e)+'</td><td style="text-align:right">'+(p?_fN(saldo):'—')+'</td><td>'+bar+'</td><td style="text-align:right">'+hG+'</td><td style="text-align:right"><b>'+rB+'</b></td><td style="text-align:right"><b>'+rN+'</b></td></tr>';
       }).join('');
       const _pctT=_tp>0?Math.min(100,Math.round(_te/_tp*100)):null;
