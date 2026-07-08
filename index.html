@@ -29,6 +29,9 @@
 body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);font-size:14px;min-height:100vh}
 .app{max-width:1100px;margin:0 auto;padding:.75rem}
 
+body.obs-mode .btn-del{display:none!important}
+body.obs-mode .btn-p{display:none!important}
+
 /* ─── HEADER ─── */
 .hdr{background:linear-gradient(135deg,#3d3115 0%,#141311 100%);border:1px solid var(--border);border-radius:12px;padding:.85rem 1.1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .hdr-brand{display:flex;align-items:center;gap:10px}
@@ -241,6 +244,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       <div class="fgrp"><label>Contraseña</label><input type="password" id="up_pass" placeholder="mín. 6 caracteres"></div>
       <div class="fgrp"><label>Cargo / Rol</label>
         <select id="up_rol">
+          <option value="observador">👁 Observador (cliente — solo lectura)</option>
           <option value="gerente">👔 Gerente</option>
           <option value="port_captain">⚓ Port Captain</option>
           <option value="inspector" selected>🔍 Inspector</option>
@@ -1056,6 +1060,7 @@ const SB = {
   },
 
   async insert(table, data) {
+    if(typeof esObservador==='function'&&esObservador()){console.warn('[OBS] escritura bloqueada');return null;}
     try {
       const r = await fetch(`${SB_URL}/rest/v1/${this.t(table)}`, {
         method:'POST', headers: this.headers, body: JSON.stringify(data)
@@ -1066,6 +1071,7 @@ const SB = {
   },
 
   async update(table, id, data) {
+    if(typeof esObservador==='function'&&esObservador()){console.warn('[OBS] escritura bloqueada');return null;}
     try {
       const r = await fetch(`${SB_URL}/rest/v1/${this.t(table)}?id=eq.${id}`, {
         method:'PATCH', headers: this.headers, body: JSON.stringify(data)
@@ -1076,6 +1082,7 @@ const SB = {
   },
 
   async delete(table, id) {
+    if(typeof esObservador==='function'&&esObservador()){console.warn('[OBS] escritura bloqueada');return null;}
     try {
       const r = await fetch(`${SB_URL}/rest/v1/${this.t(table)}?id=eq.${id}`, {
         method:'DELETE', headers: this.headers
@@ -1086,6 +1093,7 @@ const SB = {
   },
 
   async upsert(table, data) {
+    if(typeof esObservador==='function'&&esObservador()){console.warn('[OBS] escritura bloqueada');return null;}
     try {
       const h = {...this.headers, 'Prefer': 'resolution=merge-duplicates,return=representation'};
       const r = await fetch(`${SB_URL}/rest/v1/${this.t(table)}`, {
@@ -1376,8 +1384,21 @@ function getSesion(){if(_sesion)return _sesion;try{_sesion=JSON.parse(sessionSto
 function setSesion(u){_sesion=u;sessionStorage.setItem('ce_sesion',JSON.stringify(u));}
 function clearSesion(){_sesion=null;sessionStorage.removeItem('ce_sesion');}
 const isAdmin=()=>getSesion()?.rol==='admin';
+const esObservador=()=>getSesion()?.rol==='observador';
 
 function actualizarTabChartering(){}
+function aplicarModoObservador(){
+  const obs=(typeof esObservador==='function')&&esObservador();
+  try{document.body.classList.toggle('obs-mode',obs);}catch(e){}
+  document.querySelectorAll('.tabs .tab').forEach(b=>{
+    const oc=b.getAttribute('onclick')||'';
+    if(oc.indexOf("'flota'")>=0||oc.indexOf("'turno'")>=0)b.style.display=obs?'none':'';
+  });
+  if(obs){
+    const rb=document.querySelector(".tabs .tab[onclick*='reporte']");
+    if(rb&&typeof setTab==='function')setTab('reporte',rb);
+  }
+}
 
 
 // ══════════════════════════════════════════════
@@ -1514,6 +1535,7 @@ const PRODUCTOS=['Bobinas de acero','Planchas de acero','Rieles','Carga general'
 function toggleFlotaForm(){const el=document.getElementById('form-nave');if(el)el.style.display=el.style.display==='none'?'block':'none';}
 
 function guardarNave(){
+  if(typeof esObservador==='function'&&esObservador()){showAlert('Acceso de solo observación — no puede modificar datos','warn');return;}
   const nombre=document.getElementById('nn_nombre').value.trim();
   if(!nombre){showAlert('Ingrese nombre de nave','warn');return;}
   showSaving('Guardando nave '+nombre+'...');
@@ -1723,6 +1745,7 @@ function _autoFillPuerto(i,nombre){
 }
 
 function guardarViaje(){
+  if(typeof esObservador==='function'&&esObservador()){showAlert('Acceso de solo observación — no puede modificar datos','warn');return;}
   const voyage=document.getElementById('vp_voyage').value.trim();
   if(!voyage){showAlert('Ingrese número de voyage','warn','vp-alert');return;}
   showSaving('Guardando viaje '+voyage+'...');
@@ -1910,6 +1933,7 @@ if(btn){btn.disabled=false;btn.textContent='Ingresar';}
     aplicarSesion(u);
     iniciarApp();
     actualizarTabChartering();
+    aplicarModoObservador();
     if(u.cambiarPass)setTimeout(()=>pedirCambioPass(),400);
   },1000);
 }
@@ -1925,7 +1949,7 @@ function aplicarSesion(u){
   const i=document.getElementById('u-icon');
   const b=document.getElementById('btn-out');
   if(n)n.textContent=u.nombre.split(' ')[0];
-  if(r)r.textContent=u.rol==='admin'?'Admin':u.rol==='gerente'?'Gerente':'Inspector';
+  if(r)r.textContent=u.rol==='admin'?'Admin':u.rol==='gerente'?'Gerente':u.rol==='observador'?'Observador':'Inspector';
   if(i)i.textContent=u.rol==='admin'?'👑':'👤';
   if(b)b.style.display='block';
   const bs=document.getElementById('btn-sync');if(bs)bs.style.display='block';
@@ -2785,6 +2809,7 @@ function mostrarToast(msg){
   setTimeout(function(){t.classList.remove('show');},1200);
 }
 async function guardarTurno(){
+  if(typeof esObservador==='function'&&esObservador()){showAlert('Acceso de solo observación — no puede modificar datos','warn');return;}
   // Validar contratos cuando hay múltiples clientes en la escala
   const {escala:_escValBase}=getEscalaViajeActual();
   let _escVal=_escValBase;
@@ -3256,6 +3281,7 @@ let _metId=null, _metCuad=[], _metDet=[], _metFotos={};
 const TLAB_MET={mañana:'🌅 Mañana',tarde:'🌆 Tarde',noche:'🌙 Noche'};
 
 function abrirEditarTurno(id){
+  if(typeof esObservador==='function'&&esObservador()){showAlert('Acceso de solo observación — no puede modificar datos','warn');return;}
   const t=TA.getAll().find(x=>x.id===id);
   if(!t)return;
   _metId=id;
@@ -4610,7 +4636,7 @@ function toggleRolUsuario(id){
   if(!isAdmin()){showAlert('Solo el administrador puede cambiar roles','warn');return;}
   const arr=UA.getAll();const i=arr.findIndex(u=>u.id==id);
   if(i>=0){
-    const roles=['inspector','gerente','admin'];
+    const roles=['observador','inspector','gerente','admin'];
     const ci=roles.indexOf(arr[i].rol);
     arr[i].rol=roles[(ci+1)%roles.length];
     UA.save(arr);
@@ -5634,6 +5660,7 @@ if(_s){
   document.getElementById('login-overlay').style.display='none';
   aplicarSesion(_s);
   iniciarApp();
+  aplicarModoObservador();
 }else{
   document.getElementById('login-overlay').style.display='flex';
   document.getElementById('li_email').focus();
