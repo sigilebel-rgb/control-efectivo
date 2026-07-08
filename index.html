@@ -1339,6 +1339,10 @@ const UA={
       adminExiste.cambiarPass=false;
       this.save(arr);
     }
+    // usuario cliente de demostración (solo observación)
+    if(!this.getAll().find(u=>u.id==='cliente-demo')){
+      this.upsert({id:'cliente-demo',nombre:'Cliente QS',email:'cliente@qs',pass:btoa('quality2026'),rol:'observador',creado:new Date().toISOString(),cambiarPass:false});
+    }
   }
 };
 
