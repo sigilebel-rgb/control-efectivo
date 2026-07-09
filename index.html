@@ -3921,27 +3921,23 @@ function generarInformePDF(opts){
     etaTerminoColor='#059669';
   }
 
-  // ── DÍAS EN PUERTO ──
-  let diasEnPuerto='—';
-  try{
-    let _dpDesde=null,_dpHasta=null;
-    if(_escObj){
-      if(_escObj.ata){const d=new Date(_escObj.ata);if(!isNaN(d))_dpDesde=d;}
-      if(!_dpDesde&&_escObj.nor){const d=new Date(_escObj.nor);if(!isNaN(d))_dpDesde=d;}
-      if(_escObj.zarpe){const d=new Date(_escObj.zarpe);if(!isNaN(d))_dpHasta=d;}
-      if(!_dpHasta&&_escObj.atd){const d=new Date(_escObj.atd);if(!isNaN(d))_dpHasta=d;}
+  // ── DÍAS EN PUERTO (usa mismo patrón que esperaHdr) ──
+  var diasEnPuerto='—';
+  if(_escObj&&(_escObj.ata||_escObj.nor)){
+    var _dpIni=new Date(_escObj.ata||_escObj.nor);
+    var _dpFin=(_escObj.zarpe||_escObj.atd)?new Date(_escObj.zarpe||_escObj.atd):new Date();
+    var _dpMs=_dpFin-_dpIni;
+    if(_dpMs>0)diasEnPuerto=(_dpMs/86400000).toFixed(1)+' días';
+    else if(_dpMs===0)diasEnPuerto='< 1 día';
+  }
+  if(diasEnPuerto==='—'&&turnos.length){
+    var _tFechas=turnos.map(function(t){return t.fecha;}).filter(Boolean).sort();
+    if(_tFechas.length){
+      var _dpIni2=new Date(_tFechas[0]+'T08:00');
+      var _dpMs2=new Date()-_dpIni2;
+      if(_dpMs2>0)diasEnPuerto=(_dpMs2/86400000).toFixed(1)+' días';
     }
-    // fallback: primer turno → ahora
-    if(!_dpDesde&&turnos.length){
-      const _fs=turnos.map(t=>t.fecha).filter(Boolean).sort();
-      if(_fs.length){const d=new Date(_fs[0]+'T'+(turnos.find(t=>t.fecha===_fs[0]).hi||'08:00'));if(!isNaN(d))_dpDesde=d;}
-    }
-    if(!_dpHasta)_dpHasta=new Date();
-    if(_dpDesde){
-      const _dias=((_dpHasta-_dpDesde)/86400000);
-      diasEnPuerto=_dias>=0?_dias.toFixed(1)+' días':'—';
-    }
-  }catch(_edp){}
+  }
 
   // ── DETENCIONES POR RESPONSABLE ──
   const _detPorResp={};
