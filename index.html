@@ -3923,12 +3923,25 @@ function generarInformePDF(opts){
 
   // ── DÍAS EN PUERTO ──
   let diasEnPuerto='—';
-  if(_escObj&&(_escObj.ata||_escObj.nor)){
-    const _ata=new Date(_escObj.ata||_escObj.nor);
-    const _hasta=_escObj.zarpe||_escObj.atd?new Date(_escObj.zarpe||_escObj.atd):new Date();
-    const _dias=((_hasta-_ata)/86400000);
-    diasEnPuerto=_dias>=0?_dias.toFixed(1)+' días':'—';
-  }
+  try{
+    let _dpDesde=null,_dpHasta=null;
+    if(_escObj){
+      if(_escObj.ata){const d=new Date(_escObj.ata);if(!isNaN(d))_dpDesde=d;}
+      if(!_dpDesde&&_escObj.nor){const d=new Date(_escObj.nor);if(!isNaN(d))_dpDesde=d;}
+      if(_escObj.zarpe){const d=new Date(_escObj.zarpe);if(!isNaN(d))_dpHasta=d;}
+      if(!_dpHasta&&_escObj.atd){const d=new Date(_escObj.atd);if(!isNaN(d))_dpHasta=d;}
+    }
+    // fallback: primer turno → ahora
+    if(!_dpDesde&&turnos.length){
+      const _fs=turnos.map(t=>t.fecha).filter(Boolean).sort();
+      if(_fs.length){const d=new Date(_fs[0]+'T'+(turnos.find(t=>t.fecha===_fs[0]).hi||'08:00'));if(!isNaN(d))_dpDesde=d;}
+    }
+    if(!_dpHasta)_dpHasta=new Date();
+    if(_dpDesde){
+      const _dias=((_dpHasta-_dpDesde)/86400000);
+      diasEnPuerto=_dias>=0?_dias.toFixed(1)+' días':'—';
+    }
+  }catch(_edp){}
 
   // ── DETENCIONES POR RESPONSABLE ──
   const _detPorResp={};
