@@ -3921,21 +3921,24 @@ function generarInformePDF(opts){
     etaTerminoColor='#059669';
   }
 
-  // ── DÍAS EN PUERTO (usa mismo patrón que esperaHdr) ──
+  // ── DÍAS EN PUERTO (basado en turnos reales, no en fechas de escala que pueden ser futuras) ──
   var diasEnPuerto='—';
-  if(_escObj&&(_escObj.ata||_escObj.nor)){
-    var _dpIni=new Date(_escObj.ata||_escObj.nor);
-    var _dpFin=(_escObj.zarpe||_escObj.atd)?new Date(_escObj.zarpe||_escObj.atd):new Date();
-    var _dpMs=_dpFin-_dpIni;
-    if(_dpMs>0)diasEnPuerto=(_dpMs/86400000).toFixed(1)+' días';
-    else if(_dpMs===0)diasEnPuerto='< 1 día';
-  }
-  if(diasEnPuerto==='—'&&turnos.length){
+  if(turnos.length){
     var _tFechas=turnos.map(function(t){return t.fecha;}).filter(Boolean).sort();
     if(_tFechas.length){
-      var _dpIni2=new Date(_tFechas[0]+'T08:00');
-      var _dpMs2=new Date()-_dpIni2;
-      if(_dpMs2>0)diasEnPuerto=(_dpMs2/86400000).toFixed(1)+' días';
+      var _primerTurno=_tFechas[0];
+      var _ultimoTurno=_tFechas[_tFechas.length-1];
+      var _hiPrimero=turnos.find(function(t){return t.fecha===_primerTurno;})||{};
+      var _hfUltimo=turnos.filter(function(t){return t.fecha===_ultimoTurno;}).pop()||{};
+      var _dpIni=new Date(_primerTurno+'T'+(_hiPrimero.hi||'08:00'));
+      var _dpFin;
+      if(_escObj&&(_escObj.zarpe||_escObj.atd)){
+        var _zd=new Date(_escObj.zarpe||_escObj.atd);
+        if(!isNaN(_zd.getTime())&&_zd>_dpIni)_dpFin=_zd;
+      }
+      if(!_dpFin)_dpFin=new Date();
+      var _dpMs=_dpFin-_dpIni;
+      if(_dpMs>=0)diasEnPuerto=(_dpMs/86400000).toFixed(1)+' días';
     }
   }
 
