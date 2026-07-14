@@ -6354,6 +6354,7 @@ function plAsignarNave(id){
   p.escala_id=escala?escala.id:null;
   p.puerto=escala?(escala.puerto||''):'';
   PLS.update(p);
+  if(p.escala_id)plGenerarMixDesdePL(p);
   renderPackingTab();
   var msg='✅ PL asignado a '+nave.nombre;
   if(viaje)msg+=' · Voyage '+(viaje.voyage||'?');
@@ -6510,6 +6511,74 @@ function plPreFiltrar(txt){
   });
 }
 
+function plGenerarMixDesdePL(p){
+  // Auto-rellena el mix de carga de la escala asignada: TM por bodega y familia (desde prestiba)
+  if(!p||!p.escala_id)return false;
+  var acc={},meta={};
+  var usoPrestiba=!!(p.prestiba&&Object.keys(p.prestiba).length>0);
+  (p.items||[]).forEach(function(it){
+    var pesoProm=it.bultos>0?it.tm/it.bultos:0;
+    var fam=plFamiliaLabel(it.familia)||'Producto';
+    var cli=it.cliente||'';
+    var asig=0;
+    if(usoPrestiba){
+      var g=p.prestiba[it.k]||{};
+      PL_COMPS.forEach(function(c){
+        var b=Number(g[c])||0;
+        if(b<=0)return;
+        asig+=b;
+        var bod=c.slice(2);
+        var key=fam+'|'+bod+'|'+cli;
+        acc[key]=(acc[key]||0)+b*pesoProm;
+        meta[key]={fam:fam,bod:bod,cli:cli};
+      });
+    }
+    var resto=it.bultos-asig;
+    if(resto>0){
+      var key0=fam+'||'+cli;
+      acc[key0]=(acc[key0]||0)+resto*pesoProm;
+      meta[key0]={fam:fam,bod:'',cli:cli};
+    }
+  });
+  var ops=Object.keys(acc).map(function(k){
+    var m=meta[k];
+    return {tipo_op:'Embarque',producto:m.fam,ton_prog:Math.round(acc[k]*1000)/1000,bodega:m.bod,cliente:m.cli,auto_pl:true};
+  }).filter(function(o){return o.ton_prog>0;});
+  ops.sort(function(a,b){
+    var ba=a.bodega===''?99:Number(a.bodega),bb=b.bodega===''?99:Number(b.bodega);
+    if(ba!==bb)return ba-bb;
+    return a.producto.localeCompare(b.producto);
+  });
+  if(!ops.length)return false;
+  var viajes=VA.getAll().map(function(v){
+    var esc=(v.escalas||[]).map(function(e){
+      var e2={};for(var kk in e)e2[kk]=e[kk];
+      e2.operaciones=[].concat(e.operaciones||[]);
+      return e2;
+    });
+    var v2={};for(var kk in v)v2[kk]=v[kk];
+    v2.escalas=esc;
+    return v2;
+  });
+  var vi=-1,ei=-1;
+  for(var i=0;i<viajes.length&&vi<0;i++){
+    var esc2=viajes[i].escalas||[];
+    for(var j=0;j<esc2.length;j++){
+      if(esc2[j].id===p.escala_id){vi=i;ei=j;break;}
+    }
+  }
+  if(vi<0)return false;
+  var exist=viajes[vi].escalas[ei].operaciones||[];
+  var hayManual=exist.some(function(o){return !o.auto_pl;});
+  if(exist.length&&hayManual){
+    if(!confirm('La escala '+(viajes[vi].escalas[ei].puerto||'')+' ya tiene un mix de carga ingresado manualmente.\n\u00bfReemplazarlo con el mix generado desde el Packing List?'))return false;
+  }
+  viajes[vi].escalas[ei].operaciones=ops;
+  VA.update(viajes[vi]);
+  showAlert('\ud83d\udce6 Mix de carga auto-generado desde el PL \u2014 '+ops.length+' '+(ops.length!==1?'operaciones':'operaci\u00f3n')+(usoPrestiba?' (TM por bodega y familia)':' (TM por familia \u2014 completa la prestiba para el desglose por bodega)'),'success');
+  return true;
+}
+
 function plGuardarPrestiba(id){
   if(typeof esObservador==='function'&&esObservador()){showAlert('⚠️ Modo observador: no puede guardar','warn');return;}
   if(!_plPreEdit||_plPreEdit.plId!==id){showAlert('⚠️ No hay prestiba en edición','warn');return;}
@@ -6531,6 +6600,7 @@ function plGuardarPrestiba(id){
   p.prestiba_fecha=new Date().toISOString();
   PLS.update(p);
   showAlert('✅ Prestiba guardada','success');
+  if(p.escala_id)plGenerarMixDesdePL(p);
   renderPackingTab();
 }
 
