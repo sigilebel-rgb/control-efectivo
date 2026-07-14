@@ -4271,6 +4271,67 @@ function generarInformePDF(opts){
     }
   }catch(_eB){}
 
+  // ── AVANCE Y SALDOS POR PRODUCTO (Alambrón / Fierro construcción / etc) ──
+  let htmlProductos='';
+  try{
+    const _splitP=x=>String(x==null?'':x).split(/[,;]+/).map(v=>v.trim()).filter(Boolean);
+    const _minSpanP=(a,b)=>{if(!a||!b)return 0;const p1=String(a).split(':').map(Number),p2=String(b).split(':').map(Number);let d=(p2[0]*60+p2[1])-(p1[0]*60+p1[1]);if(d<0)d+=1440;return d;};
+    const _absMinP=(hhmm,anchor)=>{const p=String(hhmm||'').split(':').map(Number);if(p.length<2||isNaN(p[0])||isNaN(p[1]))return null;const a=String(anchor||'00:00').split(':').map(Number);let v=(p[0]*60+p[1])-((a[0]||0)*60+(a[1]||0));if(v<0)v+=1440;return v;};
+    const _planPr={},_ejecPr={},_gminPr={},_nminPr={};
+    if(_escObj&&Array.isArray(_escObj.operaciones)){
+      _escObj.operaciones.forEach(op=>{
+        const t=parseFloat(op.cantidad!=null&&op.cantidad!==''?op.cantidad:op.ton_prog)||0;
+        if(!t)return;
+        const pr=(op.producto||'').trim()||'Sin producto';
+        _planPr[pr]=(_planPr[pr]||0)+t;
+      });
+    }
+    turnos.forEach(t=>{
+      const _anc=t.hi||'00:00';
+      (t.cuadrillas||[]).forEach(c=>{
+        const tn=parseFloat(c.ton)||0;
+        const pr=(c.producto||'').trim()||'Sin producto';
+        if(tn)_ejecPr[pr]=(_ejecPr[pr]||0)+tn;
+        const gm=_minSpanP(c.hora_ini,c.hora_fin);
+        if(!gm)return;
+        const ci=_absMinP(c.hora_ini,_anc);if(ci==null)return;
+        const cf=ci+gm;
+        const bs=_splitP(c.bodega);
+        let det=0;
+        (t.detenciones||[]).forEach(d=>{
+          if(d.resp!=='Nave')return;
+          const bo=(d.bodega==null||d.bodega===''||d.bodega==='Todas')?'Todas':String(d.bodega);
+          if(bo!=='Todas'&&bs.length&&!_splitP(bo).some(x=>bs.indexOf(x)>=0))return;
+          const dm=parseFloat(d.min)||0;
+          const di=_absMinP(d.hi,_anc);
+          if(di==null||!dm)return;
+          det+=Math.max(0,Math.min(cf,di+dm)-Math.max(ci,di));
+        });
+        _gminPr[pr]=(_gminPr[pr]||0)+gm;
+        _nminPr[pr]=(_nminPr[pr]||0)+Math.max(0,gm-Math.min(det,gm));
+      });
+    });
+    const _keysP=[...new Set([...Object.keys(_planPr),...Object.keys(_ejecPr)])].sort((a,b)=>a.localeCompare(b));
+    if(_keysP.length){
+      const _fNP=v=>Math.round(v).toLocaleString('es-CL');
+      let _tpP=0,_teP=0,_tgmP=0;
+      const _rowsP=_keysP.map(pr=>{
+        const p=_planPr[pr]||0,e=_ejecPr[pr]||0;_tpP+=p;_teP+=e;
+        const saldo=p>0?Math.max(0,p-e):0;
+        const pct=p>0?Math.min(100,Math.round(e/p*100)):null;
+        const bar=pct==null?'—':'<div style="background:#eee;border-radius:4px;height:9px;width:90px;display:inline-block;vertical-align:middle;overflow:hidden"><div style="background:'+(pct>=100?'#059669':'#8C6D2C')+';height:9px;width:'+pct+'%"></div></div> <b style="margin-left:4px">'+pct+'%</b>';
+        const gm=_gminPr[pr]||0;_tgmP+=gm;
+        const nm=Math.min(gm,_nminPr[pr]||0);
+        const hG=gm>0?(gm/60).toFixed(1):'—';
+        const rB=(gm>0&&e>0)?Math.round(e/(gm/60)).toLocaleString('es-CL'):'—';
+        const rN=(nm>=10&&e>0)?Math.round(e/(nm/60)).toLocaleString('es-CL'):'—';
+        return '<tr><td><b>'+pr+'</b></td><td style="text-align:right">'+(p?_fNP(p):'—')+'</td><td style="text-align:right">'+_fNP(e)+'</td><td style="text-align:right">'+(p?_fNP(saldo):'—')+'</td><td>'+bar+'</td><td style="text-align:right">'+hG+'</td><td style="text-align:right"><b>'+rB+'</b></td><td style="text-align:right"><b>'+rN+'</b></td></tr>';
+      }).join('');
+      const _pctTP=_tpP>0?Math.min(100,Math.round(_teP/_tpP*100)):null;
+      htmlProductos='<div class="section"><h2>🏗️ Avance, Saldos y Rendimiento por Producto</h2><table><thead><tr><th>Producto</th><th style="text-align:right">Prog. (t)</th><th style="text-align:right">Ejec. (t)</th><th style="text-align:right">Saldo (t)</th><th>Avance</th><th style="text-align:right">Hrs grúa</th><th style="text-align:right">Bruto (t/h)</th><th style="text-align:right">Neto (t/h)</th></tr></thead><tbody>'+_rowsP+'<tr><td><b>TOTAL</b></td><td style="text-align:right"><b>'+(_tpP?_fNP(_tpP):'—')+'</b></td><td style="text-align:right"><b>'+_fNP(_teP)+'</b></td><td style="text-align:right"><b>'+(_tpP?_fNP(Math.max(0,_tpP-_teP)):'—')+'</b></td><td><b>'+(_pctTP==null?'—':_pctTP+'%')+'</b></td><td style="text-align:right"><b>'+(_tgmP>0?(_tgmP/60).toFixed(1):'—')+'</b></td><td style="text-align:right"><b>'+((_tgmP>0&&_teP>0)?Math.round(_teP/(_tgmP/60)).toLocaleString('es-CL'):'—')+'</b></td><td style="text-align:right"><b>—</b></td></tr></tbody></table><div style="font-size:9.5px;color:#777;margin-top:4px">Prog. según mix de carga de la escala (generado desde el Packing List). Bruto = ton ÷ horas de grúa del producto. Neto = descuenta detenciones resp. Nave.</div></div>';
+    }
+  }catch(_ePr){}
+
   const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
 <title>Informe Ejecutivo — ${naveLabel}</title>
 <style>
@@ -4325,6 +4386,7 @@ ${_barraProgreso}
 <table><thead><tr><th>Fecha</th><th>Turno</th><th>Horario</th><th>Ton.</th><th>Acum.</th><th>Bruto</th><th>Neto</th><th>Det.</th><th>Tipos Detención</th><th>Registrado</th></tr></thead>
 <tbody>${filasTurnos}</tbody></table></div>
 ${htmlBodegas}
+${htmlProductos}
 ${htmlEscala}
 ${htmlDetenciones}
 ${htmlNovedades}
