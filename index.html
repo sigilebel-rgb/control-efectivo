@@ -6227,7 +6227,7 @@ function renderPackingTab(){
       h+='<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">'+
         '<div><div style="font-weight:700">📦 '+p.nombre+'</div>'+
-        '<div style="font-size:11px;color:var(--text3)">'+(p.nave?('Nave: '+p.nave):'Nave por asignar')+' · Cargado '+String(p.creado||'').slice(0,10)+' · '+plFmtInt(p.tot_bultos)+' bultos · '+plFmtTM(p.tot_tm)+' TM · '+p.items.length+' ítems</div></div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+(p.nave?('Nave: '+p.nave+(p.voyage?(' · Voyage '+p.voyage):'')+(p.puerto?(' · 📍 '+p.puerto):'')):'Nave por asignar')+' · Cargado '+String(p.creado||'').slice(0,10)+' · '+plFmtInt(p.tot_bultos)+' bultos · '+plFmtTM(p.tot_tm)+' TM · '+p.items.length+' ítems</div></div>'+
         '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
         '<button data-id="'+p.id+'" onclick="plAsignarNaveUI(this.dataset.id)" style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px">🚢 '+(p.nave?'Cambiar nave':'Asignar nave')+'</button>'+
         '<button data-id="'+p.id+'" onclick="plTogglePrestiba(this.dataset.id)" style="background:var(--bg3);color:var(--yellow);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px">🗺 Prestiba'+(p.prestiba?' ✓':'')+'</button>'+
@@ -6254,14 +6254,20 @@ function plAsignarNaveUI(id){
   var naves=NA.getAll();
   if(!naves.length){showAlert('⚠️ No hay naves en la flota. Crea la nave primero en Flota & Viajes.','warn');return;}
   var p=PLS.getAll().filter(function(x){return x.id===id;})[0];
+  var selStyle='background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12px;max-width:220px';
   var h='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px">'+
-    '<span style="font-size:12px;color:var(--text2)">Asignar a:</span>'+
-    '<select id="pl-nave-sel-'+id+'" style="background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12px">';
+    '<span style="font-size:12px;color:var(--text2)">Nave:</span>'+
+    '<select id="pl-nave-sel-'+id+'" data-id="'+id+'" onchange="plNaveSelChange(this.dataset.id)" style="'+selStyle+'">'+
+    '<option value="">— seleccionar —</option>';
   naves.forEach(function(n){
     var sel=(p&&p.nave_id===n.id)?' selected':'';
     h+='<option value="'+n.id+'"'+sel+'>'+n.nombre+'</option>';
   });
   h+='</select>'+
+    '<span style="font-size:12px;color:var(--text2)">Viaje:</span>'+
+    '<select id="pl-viaje-sel-'+id+'" data-id="'+id+'" onchange="plViajeSelChange(this.dataset.id)" style="'+selStyle+'"></select>'+
+    '<span style="font-size:12px;color:var(--text2)">Recalada:</span>'+
+    '<select id="pl-esc-sel-'+id+'" style="'+selStyle+'"></select>'+
     '<button data-id="'+id+'" onclick="plAsignarNave(this.dataset.id)" style="background:var(--blue);color:#121110;font-weight:700;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px">Confirmar</button>';
   if(p&&p.nave_id){
     h+='<button data-id="'+id+'" onclick="plQuitarNave(this.dataset.id)" style="background:var(--bg4);color:var(--text2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px">Quitar asignación</button>';
@@ -6269,21 +6275,65 @@ function plAsignarNaveUI(id){
   h+='</div>';
   box.innerHTML=h;
   box.style.display='';
+  plNaveSelChange(id);
+}
+
+function plNaveSelChange(id){
+  var p=PLS.getAll().filter(function(x){return x.id===id;})[0];
+  var selN=document.getElementById('pl-nave-sel-'+id);
+  var selV=document.getElementById('pl-viaje-sel-'+id);
+  if(!selN||!selV)return;
+  var naveId=selN.value;
+  var viajes=VA.getAll().filter(function(v){return v.nave_id===naveId;});
+  var h='<option value="">— sin viaje —</option>';
+  viajes.forEach(function(v){
+    var sel=(p&&p.viaje_id===v.id)?' selected':'';
+    h+='<option value="'+v.id+'"'+sel+'>Voyage '+(v.voyage||'?')+(v.desc?(' · '+v.desc):'')+'</option>';
+  });
+  selV.innerHTML=h;
+  plViajeSelChange(id);
+}
+
+function plViajeSelChange(id){
+  var p=PLS.getAll().filter(function(x){return x.id===id;})[0];
+  var selV=document.getElementById('pl-viaje-sel-'+id);
+  var selE=document.getElementById('pl-esc-sel-'+id);
+  if(!selV||!selE)return;
+  var viaje=VA.getAll().filter(function(v){return v.id===selV.value;})[0];
+  var h='<option value="">— sin recalada —</option>';
+  ((viaje||{}).escalas||[]).forEach(function(e){
+    var sel=(p&&p.escala_id===e.id)?' selected':'';
+    h+='<option value="'+e.id+'"'+sel+'>'+(e.puerto||'?')+(e.pais?(' ('+e.pais+')'):'')+(e.terminal?(' · '+e.terminal):'')+'</option>';
+  });
+  selE.innerHTML=h;
 }
 
 function plAsignarNave(id){
-  var sel=document.getElementById('pl-nave-sel-'+id);
-  var naveId=((sel||{}).value||'');
-  if(!naveId)return;
+  var selN=document.getElementById('pl-nave-sel-'+id);
+  var naveId=((selN||{}).value||'');
+  if(!naveId){showAlert('⚠️ Selecciona una nave','warn');return;}
   var nave=NA.getAll().filter(function(n){return n.id===naveId;})[0];
   if(!nave){showAlert('⚠️ Nave no encontrada','warn');return;}
   var p=PLS.getAll().filter(function(x){return x.id===id;})[0];
   if(!p)return;
+  var selV=document.getElementById('pl-viaje-sel-'+id);
+  var selE=document.getElementById('pl-esc-sel-'+id);
+  var viajeId=((selV||{}).value||'');
+  var escId=((selE||{}).value||'');
+  var viaje=viajeId?VA.getAll().filter(function(v){return v.id===viajeId;})[0]:null;
+  var escala=viaje?((viaje.escalas||[]).filter(function(e){return e.id===escId;})[0]||null):null;
   p.nave_id=nave.id;
   p.nave=nave.nombre;
+  p.viaje_id=viaje?viaje.id:'';
+  p.voyage=viaje?(viaje.voyage||''):'';
+  p.escala_id=escala?escala.id:null;
+  p.puerto=escala?(escala.puerto||''):'';
   PLS.update(p);
   renderPackingTab();
-  showAlert('✅ Packing List asignado a '+nave.nombre,'success');
+  var msg='✅ PL asignado a '+nave.nombre;
+  if(viaje)msg+=' · Voyage '+(viaje.voyage||'?');
+  if(escala)msg+=' · '+escala.puerto;
+  showAlert(msg,'success');
 }
 
 function plQuitarNave(id){
@@ -6292,9 +6342,13 @@ function plQuitarNave(id){
   if(!confirm('¿Quitar la asignación de nave de "'+p.nombre+'"?'))return;
   p.nave_id='';
   p.nave='';
+  p.viaje_id='';
+  p.voyage='';
+  p.escala_id=null;
+  p.puerto='';
   PLS.update(p);
   renderPackingTab();
-  showAlert('✅ Asignación de nave eliminada','success');
+  showAlert('✅ Asignación eliminada','success');
 }
 
 // ── PRESTIBA TEÓRICA: distribución por compartimentos LH/TD ──
