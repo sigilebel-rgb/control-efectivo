@@ -2975,6 +2975,22 @@ async function guardarTurno(){
         if(escalaId)console.warn('[Turno] escala_id inferido:',escalaId);
         else console.warn('[Turno] Sin escala_id para nave='+_nave+' puerto='+_puerto);
       }
+      // ── Control cruzado: toneladas de cuadrillas vs rebajas Packing List ──
+      if(typeof _plRebPlId!=='undefined'&&_plRebPlId){
+        var _rebTM=0;((typeof _plRebTemp!=='undefined'&&_plRebTemp)||[]).forEach(function(r){_rebTM+=Number(r.tm)||0;});
+        _rebTM=Math.round(_rebTM*10)/10;
+        var _difTM=Math.round(Math.abs(totalTon-_rebTM)*10)/10;
+        var _tolTM=Math.max(totalTon*0.05,5);
+        var _msgCruce='';
+        if(_rebTM>0&&totalTon>0&&_difTM>_tolTM){
+          _msgCruce='\u26a0\ufe0f Control cruzado Packing List:\n\nToneladas de cuadrillas: '+totalTon.toLocaleString('es-CL')+' TM\nRebaja PL registrada: '+_rebTM.toLocaleString('es-CL')+' TM\nDiferencia: '+_difTM.toLocaleString('es-CL')+' TM\n\n\u00bfGuardar de todas formas?';
+        } else if(_rebTM>0&&totalTon===0){
+          _msgCruce='\u26a0\ufe0f Registraste rebajas del PL por '+_rebTM.toLocaleString('es-CL')+' TM pero las cuadrillas no tienen toneladas.\n\n\u00bfGuardar de todas formas?';
+        } else if(_rebTM===0&&totalTon>0){
+          _msgCruce='\u26a0\ufe0f Las cuadrillas registran '+totalTon.toLocaleString('es-CL')+' TM pero no ingresaste rebajas del Packing List de esta escala.\n\n\u00bfGuardar de todas formas?';
+        }
+        if(_msgCruce&&!confirm(_msgCruce)){hideSaving();return;}
+      }
       const t={
         id:uid(),
         nave:normalizaNave(nave),puerto:normalizaPuerto(document.getElementById('t_puerto').value.trim()),
