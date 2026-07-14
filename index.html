@@ -4282,7 +4282,7 @@ function generarInformePDF(opts){
       _escObj.operaciones.forEach(op=>{
         const t=parseFloat(op.cantidad!=null&&op.cantidad!==''?op.cantidad:op.ton_prog)||0;
         if(!t)return;
-        const pr=(op.producto||'').trim()||'Sin producto';
+        const pr=(typeof plFamiliaLabel==='function'?plFamiliaLabel((op.producto||'').trim()):(op.producto||'').trim())||'Sin producto';
         _planPr[pr]=(_planPr[pr]||0)+t;
       });
     }
@@ -4290,7 +4290,7 @@ function generarInformePDF(opts){
       const _anc=t.hi||'00:00';
       (t.cuadrillas||[]).forEach(c=>{
         const tn=parseFloat(c.ton)||0;
-        const pr=(c.producto||'').trim()||'Sin producto';
+        const pr=(typeof plFamiliaLabel==='function'?plFamiliaLabel((c.producto||'').trim()):(c.producto||'').trim())||'Sin producto';
         if(tn)_ejecPr[pr]=(_ejecPr[pr]||0)+tn;
         const gm=_minSpanP(c.hora_ini,c.hora_fin);
         if(!gm)return;
