@@ -6230,10 +6230,12 @@ function renderPackingTab(){
         '<div style="font-size:11px;color:var(--text3)">'+(p.nave?('Nave: '+p.nave):'Nave por asignar')+' · Cargado '+String(p.creado||'').slice(0,10)+' · '+plFmtInt(p.tot_bultos)+' bultos · '+plFmtTM(p.tot_tm)+' TM · '+p.items.length+' ítems</div></div>'+
         '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
         '<button data-id="'+p.id+'" onclick="plAsignarNaveUI(this.dataset.id)" style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px">🚢 '+(p.nave?'Cambiar nave':'Asignar nave')+'</button>'+
+        '<button data-id="'+p.id+'" onclick="plTogglePrestiba(this.dataset.id)" style="background:var(--bg3);color:var(--yellow);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px">🗺 Prestiba'+(p.prestiba?' ✓':'')+'</button>'+
         '<button data-id="'+p.id+'" onclick="plToggleDetalle(this.dataset.id)" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px">👁 Ver</button>'+
         '<button data-id="'+p.id+'" onclick="plEliminar(this.dataset.id)" class="btn-del" style="background:var(--red-dim);color:var(--red);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px">🗑</button>'+
         '</div></div>'+
         '<div id="pl-nave-'+p.id+'" style="display:none;margin-top:8px"></div>'+
+        '<div id="pl-pre-'+p.id+'" style="display:none;margin-top:8px"></div>'+
         '<div id="pl-det-'+p.id+'" style="display:none;margin-top:8px"></div></div>';
     });
     cont.innerHTML=h;
@@ -6293,6 +6295,164 @@ function plQuitarNave(id){
   PLS.update(p);
   renderPackingTab();
   showAlert('✅ Asignación de nave eliminada','success');
+}
+
+// ── PRESTIBA TEÓRICA: distribución por compartimentos LH/TD ──
+var PL_COMPS=['LH1','LH2','LH3','LH4','LH5','TD1','TD2','TD3','TD4','TD5'];
+var _plPreEdit=null; // {plId, dist:{itemIdx:{comp:n}}}
+
+function plTogglePrestiba(id){
+  var box=document.getElementById('pl-pre-'+id);
+  if(!box)return;
+  if(box.style.display!=='none'){box.style.display='none';box.innerHTML='';_plPreEdit=null;return;}
+  var p=PLS.getAll().filter(function(x){return x.id===id;})[0];
+  if(!p)return;
+  // inicializar edición desde pl.prestiba (guardada por clave k)
+  var dist={};
+  p.items.forEach(function(it,idx){
+    dist[idx]={};
+    var g=(p.prestiba||{})[it.k]||{};
+    PL_COMPS.forEach(function(c){if(g[c])dist[idx][c]=Number(g[c])||0;});
+  });
+  _plPreEdit={plId:id,dist:dist};
+  box.innerHTML=plPrestibaHTML(p);
+  box.style.display='';
+  plPreRefrescar(p);
+}
+
+function plPrestibaHTML(p){
+  var obs=(typeof esObservador==='function'&&esObservador());
+  var dis=obs?' disabled':'';
+  var h='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">'+
+    '<div style="font-weight:700;font-size:13px">🗺 Prestiba teórica — distribución en bultos por compartimento</div>'+
+    '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'+
+    '<input id="pl-pre-filtro" type="text" placeholder="Filtrar material / marca / familia..." oninput="plPreFiltrar(this.value)" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12px;min-width:200px">'+
+    (obs?'':'<button data-id="'+p.id+'" onclick="plGuardarPrestiba(this.dataset.id)" style="background:var(--blue);color:#121110;font-weight:700;border:none;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:12px">💾 Guardar prestiba</button>')+
+    '<button data-id="'+p.id+'" onclick="plTogglePrestiba(this.dataset.id)" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;cursor:pointer;font-size:12px">Cerrar</button>'+
+    '</div></div>';
+  h+='<div id="pl-pre-resumen" style="font-size:12px;color:var(--text2);margin-bottom:6px"></div>';
+  h+='<div style="overflow-x:auto;max-height:60vh;overflow-y:auto"><table style="border-collapse:collapse;font-size:11px;min-width:900px">';
+  // header
+  h+='<thead><tr style="color:var(--text3);text-align:left;position:sticky;top:0;background:var(--bg2);z-index:2">'+
+    '<th style="padding:4px 6px;position:sticky;left:0;background:var(--bg2);z-index:3;min-width:180px">Ítem</th>'+
+    '<th style="padding:4px 4px;text-align:right">PL</th>';
+  PL_COMPS.forEach(function(c){
+    var esTd=c.indexOf('TD')===0;
+    h+='<th style="padding:4px 3px;text-align:center;color:'+(esTd?'var(--yellow)':'var(--blue)')+'">'+c+'</th>';
+  });
+  h+='<th style="padding:4px 6px;text-align:right">Asig.</th><th style="padding:4px 6px;text-align:right">Saldo</th></tr></thead><tbody>';
+  // filas
+  p.items.forEach(function(it,idx){
+    var filtro=(it.marca+' '+it.cliente+' '+it.familia+' '+it.material+' '+it.texto+' '+it.longitud).toLowerCase();
+    h+='<tr class="pl-pre-fila" data-filtro="'+filtro.replace(/"/g,'')+'" style="border-top:1px solid var(--border2)">'+
+      '<td style="padding:3px 6px;position:sticky;left:0;background:var(--bg2);white-space:nowrap;z-index:1">'+
+      '<span style="width:9px;height:9px;border-radius:3px;display:inline-block;background:'+plColorHex(it.color)+';margin-right:5px"></span>'+
+      '<b>'+it.material+'</b> · '+it.longitud+' <span style="color:var(--text3)">'+it.marca+' · '+it.familia+'</span></td>'+
+      '<td style="padding:3px 4px;text-align:right;color:var(--text2)">'+plFmtInt(it.bultos)+'</td>';
+    PL_COMPS.forEach(function(c){
+      var v=(_plPreEdit.dist[idx]||{})[c]||'';
+      h+='<td style="padding:2px"><input type="number" min="0" step="1" value="'+v+'" data-idx="'+idx+'" data-comp="'+c+'" oninput="plPreInput(this)"'+dis+
+        ' style="width:46px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 3px;color:var(--text);font-size:11px;text-align:right"></td>';
+    });
+    h+='<td id="pl-pre-asig-'+idx+'" style="padding:3px 6px;text-align:right"></td>'+
+      '<td id="pl-pre-saldo-'+idx+'" style="padding:3px 6px;text-align:right;font-weight:700"></td></tr>';
+  });
+  h+='</tbody><tfoot>';
+  // totales bultos y TM por compartimento
+  h+='<tr style="border-top:2px solid var(--border);color:var(--text)"><td style="padding:4px 6px;position:sticky;left:0;background:var(--bg2);font-weight:700">Total bultos</td><td style="padding:4px;text-align:right;font-weight:700">'+plFmtInt(p.tot_bultos)+'</td>';
+  PL_COMPS.forEach(function(c){h+='<td id="pl-pre-totb-'+c+'" style="padding:4px 3px;text-align:center;font-weight:700"></td>';});
+  h+='<td id="pl-pre-totb-asig" style="padding:4px 6px;text-align:right;font-weight:700"></td><td id="pl-pre-totb-saldo" style="padding:4px 6px;text-align:right;font-weight:700"></td></tr>';
+  h+='<tr style="color:var(--text2)"><td style="padding:2px 6px;position:sticky;left:0;background:var(--bg2)">TM</td><td style="padding:2px 4px;text-align:right">'+plFmtTM(p.tot_tm)+'</td>';
+  PL_COMPS.forEach(function(c){h+='<td id="pl-pre-tottm-'+c+'" style="padding:2px 3px;text-align:center;font-size:10px"></td>';});
+  h+='<td id="pl-pre-tottm-asig" style="padding:2px 6px;text-align:right;font-size:10px"></td><td></td></tr>';
+  h+='</tfoot></table></div></div>';
+  return h;
+}
+
+function plPreInput(inp){
+  if(!_plPreEdit)return;
+  var idx=Number(inp.dataset.idx),comp=inp.dataset.comp;
+  var v=Math.max(0,Math.floor(Number(inp.value)||0));
+  if(!_plPreEdit.dist[idx])_plPreEdit.dist[idx]={};
+  if(v>0)_plPreEdit.dist[idx][comp]=v;else delete _plPreEdit.dist[idx][comp];
+  var p=PLS.getAll().filter(function(x){return x.id===_plPreEdit.plId;})[0];
+  if(p)plPreRefrescar(p);
+}
+
+function plPreRefrescar(p){
+  if(!_plPreEdit)return;
+  var totComp={},tmComp={},totAsig=0,tmAsig=0,sobre=0;
+  PL_COMPS.forEach(function(c){totComp[c]=0;tmComp[c]=0;});
+  p.items.forEach(function(it,idx){
+    var d=_plPreEdit.dist[idx]||{};
+    var asig=0;
+    var pesoProm=it.bultos>0?it.tm/it.bultos:0;
+    PL_COMPS.forEach(function(c){
+      var n=d[c]||0;
+      asig+=n;totComp[c]+=n;tmComp[c]+=n*pesoProm;
+    });
+    totAsig+=asig;tmAsig+=asig*pesoProm;
+    var saldo=it.bultos-asig;
+    if(saldo<0)sobre++;
+    var elA=document.getElementById('pl-pre-asig-'+idx);
+    var elS=document.getElementById('pl-pre-saldo-'+idx);
+    if(elA)elA.textContent=asig?plFmtInt(asig):'';
+    if(elS){
+      elS.textContent=plFmtInt(saldo);
+      elS.style.color=saldo<0?'var(--red)':(saldo===0?'var(--green)':'var(--text2)');
+    }
+  });
+  PL_COMPS.forEach(function(c){
+    var eb=document.getElementById('pl-pre-totb-'+c);
+    var et=document.getElementById('pl-pre-tottm-'+c);
+    if(eb)eb.textContent=totComp[c]?plFmtInt(totComp[c]):'';
+    if(et)et.textContent=tmComp[c]?plFmtTM(tmComp[c]):'';
+  });
+  var ea=document.getElementById('pl-pre-totb-asig');
+  var es=document.getElementById('pl-pre-totb-saldo');
+  var eta=document.getElementById('pl-pre-tottm-asig');
+  if(ea)ea.textContent=plFmtInt(totAsig);
+  if(eta)eta.textContent=plFmtTM(tmAsig);
+  var saldoTot=p.tot_bultos-totAsig;
+  if(es){es.textContent=plFmtInt(saldoTot);es.style.color=saldoTot<0?'var(--red)':(saldoTot===0?'var(--green)':'var(--yellow)');}
+  var res=document.getElementById('pl-pre-resumen');
+  if(res){
+    var msg='Asignado: <b>'+plFmtInt(totAsig)+'</b> de '+plFmtInt(p.tot_bultos)+' bultos ('+plFmtTM(tmAsig)+' TM) · Por asignar: <b style="color:'+(saldoTot===0?'var(--green)':'var(--yellow)')+'">'+plFmtInt(saldoTot)+'</b>';
+    if(sobre>0)msg+=' · <b style="color:var(--red)">⚠️ '+sobre+' ítem(s) sobreasignado(s)</b>';
+    res.innerHTML=msg;
+  }
+}
+
+function plPreFiltrar(txt){
+  var q=String(txt||'').toLowerCase().trim();
+  document.querySelectorAll('.pl-pre-fila').forEach(function(tr){
+    tr.style.display=(!q||tr.dataset.filtro.indexOf(q)>=0)?'':'none';
+  });
+}
+
+function plGuardarPrestiba(id){
+  if(typeof esObservador==='function'&&esObservador()){showAlert('⚠️ Modo observador: no puede guardar','warn');return;}
+  if(!_plPreEdit||_plPreEdit.plId!==id){showAlert('⚠️ No hay prestiba en edición','warn');return;}
+  var p=PLS.getAll().filter(function(x){return x.id===id;})[0];
+  if(!p)return;
+  var sobre=[];
+  var prestiba={};
+  p.items.forEach(function(it,idx){
+    var d=_plPreEdit.dist[idx]||{};
+    var asig=0,g={};
+    PL_COMPS.forEach(function(c){if(d[c]>0){g[c]=d[c];asig+=d[c];}});
+    if(asig>it.bultos)sobre.push(it.material+' '+it.longitud+' ('+it.marca+')');
+    if(asig>0)prestiba[it.k]=g;
+  });
+  if(sobre.length){
+    if(!confirm('⚠️ Hay ítems con más bultos asignados que los del PL:\n'+sobre.slice(0,5).join('\n')+(sobre.length>5?'\n...':'')+'\n\n¿Guardar de todas formas?'))return;
+  }
+  p.prestiba=prestiba;
+  p.prestiba_fecha=new Date().toISOString();
+  PLS.update(p);
+  showAlert('✅ Prestiba guardada','success');
+  renderPackingTab();
 }
 
 function plToggleDetalle(id){
