@@ -935,7 +935,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       <div class="card-title">📦 Carga embarcada — rebaja Packing List
         <span id="pl-reb-plnombre" style="font-size:11px;font-weight:400;color:var(--text2)"></span>
       </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px">Las rebajas alimentan automáticamente las cuadrillas del turno (producto, bodega y toneladas) — solo completa grúa y horarios.</div>
       <div id="pl-reb-resumen" style="font-size:12px;color:var(--text2);margin-bottom:8px"></div>
+      <div style="margin-bottom:6px"><input id="pl-reb-filtro" type="text" placeholder="🔍 Filtrar ítems: familia, marca, material o longitud..." oninput="plRebRefrescar()" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12px;width:100%;max-width:420px"></div>
       <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px">
         <div class="fgrp" style="min-width:280px;flex:2"><label>Ítem del PL (familia · marca · material · longitud)</label>
           <select id="pl-reb-item" onchange="plRebHint()"></select></div>
@@ -6535,7 +6537,6 @@ function plGenerarMixDesdePL(p){
   (p.items||[]).forEach(function(it){
     var pesoProm=it.bultos>0?it.tm/it.bultos:0;
     var fam=plFamiliaLabel(it.familia)||'Producto';
-    var cli=it.cliente||'';
     var asig=0;
     if(usoPrestiba){
       var g=p.prestiba[it.k]||{};
@@ -6544,21 +6545,21 @@ function plGenerarMixDesdePL(p){
         if(b<=0)return;
         asig+=b;
         var bod=c.slice(2);
-        var key=fam+'|'+bod+'|'+cli;
+        var key=fam+'|'+bod;
         acc[key]=(acc[key]||0)+b*pesoProm;
-        meta[key]={fam:fam,bod:bod,cli:cli};
+        meta[key]={fam:fam,bod:bod};
       });
     }
     var resto=it.bultos-asig;
     if(resto>0){
-      var key0=fam+'||'+cli;
+      var key0=fam+'|';
       acc[key0]=(acc[key0]||0)+resto*pesoProm;
-      meta[key0]={fam:fam,bod:'',cli:cli};
+      meta[key0]={fam:fam,bod:''};
     }
   });
   var ops=Object.keys(acc).map(function(k){
     var m=meta[k];
-    return {tipo_op:'Embarque',producto:m.fam,ton_prog:Math.round(acc[k]*1000)/1000,bodega:m.bod,cliente:m.cli,auto_pl:true};
+    return {tipo_op:'Embarque',producto:m.fam,ton_prog:Math.round(acc[k]*1000)/1000,bodega:m.bod,cliente:'',auto_pl:true};
   }).filter(function(o){return o.ton_prog>0;});
   ops.sort(function(a,b){
     var ba=a.bodega===''?99:Number(a.bodega),bb=b.bodega===''?99:Number(b.bodega);
@@ -6681,13 +6682,19 @@ function plRebRefrescar(){
   var sel=document.getElementById('pl-reb-item');
   if(sel){
     var cur=sel.value;
+    var filtEl=document.getElementById('pl-reb-filtro');
+    var filt=(filtEl?filtEl.value:'').toLowerCase().trim();
     var h='';
     pl.items.forEach(function(it,idx){
+      if(filt){
+        var hay=(plFamiliaLabel(it.familia)+' '+it.familia+' '+it.marca+' '+it.material+' '+it.longitud+' '+(it.texto||'')+' '+(it.cliente||'')).toLowerCase();
+        if(hay.indexOf(filt)<0)return;
+      }
       var emb=((prev[it.k]||{}).bultos||0)+(tempAcc[it.k]||0);
       var saldo=it.bultos-emb;
       h+='<option value="'+idx+'"'+(String(idx)===cur?' selected':'')+'>'+plFamiliaLabel(it.familia)+' · '+it.marca+' · '+it.material+' · '+it.longitud+' — saldo '+plFmtInt(saldo)+' de '+plFmtInt(it.bultos)+'</option>';
     });
-    sel.innerHTML=h;
+    sel.innerHTML=h||'<option value="">— sin ítems que coincidan —</option>';
   }
   // resumen global
   var totEmb=0,totEmbTM=0;
@@ -6758,11 +6765,46 @@ function plRebAgregar(){
   }
   if(bEl)bEl.value='';
   plRebRefrescar();
+  plRebSyncCuadrillas();
+}
+
+function plRebSyncCuadrillas(){
+  // Las rebajas del turno alimentan las cuadrillas: producto=familia, bodega=del compartimento, ton=TM
+  if(typeof cuadrillas==='undefined')return;
+  var grupos={};
+  _plRebTemp.forEach(function(r){
+    var bod=String(r.comp||'').slice(2);
+    var fam=plFamiliaLabel(r.familia)||'Producto';
+    var key=fam+'|'+bod;
+    if(!grupos[key])grupos[key]={producto:fam,bodega:bod,tm:0};
+    grupos[key].tm+=Number(r.tm)||0;
+  });
+  Object.keys(grupos).forEach(function(k){
+    var g=grupos[k];
+    var ton=Math.round(g.tm*10)/10;
+    var fila=cuadrillas.filter(function(c){return c._autoPl&&c.producto===g.producto&&String(c.bodega||'')===g.bodega;})[0];
+    if(fila){fila.ton=ton;return;}
+    var vacia=cuadrillas.filter(function(c){return !c._autoPl&&!c.producto&&!(c.ton>0)&&!c.hora_ini&&!c.hora_fin;})[0];
+    if(vacia){
+      vacia.producto=g.producto;vacia.bodega=g.bodega;vacia.ton=ton;vacia.tipo_op='Embarque';vacia._autoPl=true;
+    }else{
+      cuadrillas.push({id:uid(),grua:'',tipo_op:'Embarque',producto:g.producto,bodega:g.bodega,hora_ini:'',hora_fin:'',ton:ton,cliente:'',_autoPl:true});
+    }
+  });
+  for(var i=cuadrillas.length-1;i>=0;i--){
+    var c=cuadrillas[i];
+    if(c._autoPl&&!grupos[(c.producto||'')+'|'+String(c.bodega||'')]){
+      cuadrillas.splice(i,1);
+    }
+  }
+  if(typeof renderCuadrillas==='function')renderCuadrillas();
+  if(typeof calcKPIs==='function')calcKPIs();
 }
 
 function plRebQuitar(i){
   _plRebTemp.splice(Number(i),1);
   plRebRefrescar();
+  plRebSyncCuadrillas();
 }
 
 function plRebRenderLista(){
