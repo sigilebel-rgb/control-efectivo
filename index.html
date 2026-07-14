@@ -930,6 +930,28 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       </div>
     </div>
 
+    <!-- REBAJA PACKING LIST -->
+    <div class="card" id="pl-reb-card" style="display:none">
+      <div class="card-title">📦 Carga embarcada — rebaja Packing List
+        <span id="pl-reb-plnombre" style="font-size:11px;font-weight:400;color:var(--text2)"></span>
+      </div>
+      <div id="pl-reb-resumen" style="font-size:12px;color:var(--text2);margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px">
+        <div class="fgrp" style="min-width:280px;flex:2"><label>Ítem del PL (marca · material · longitud)</label>
+          <select id="pl-reb-item" onchange="plRebHint()"></select></div>
+        <div class="fgrp" style="min-width:100px"><label>Compartimento</label>
+          <select id="pl-reb-comp" onchange="plRebHint()">
+            <option value="LH1">LH1</option><option value="LH2">LH2</option><option value="LH3">LH3</option><option value="LH4">LH4</option><option value="LH5">LH5</option>
+            <option value="TD1">TD1</option><option value="TD2">TD2</option><option value="TD3">TD3</option><option value="TD4">TD4</option><option value="TD5">TD5</option>
+          </select></div>
+        <div class="fgrp" style="min-width:90px"><label>Bultos</label>
+          <input type="number" id="pl-reb-bultos" min="1" step="1" placeholder="0"></div>
+        <button onclick="plRebAgregar()" style="background:var(--blue);color:#121110;font-weight:700;border:none;border-radius:8px;padding:9px 16px;cursor:pointer">+ Agregar</button>
+      </div>
+      <div id="pl-reb-hint" style="font-size:11px;color:var(--text3);margin-bottom:8px"></div>
+      <div id="pl-reb-lista"></div>
+    </div>
+
     <!-- GUARDAR TURNO -->
     <div class="card">
       <div class="card-title">💾 Cerrar y Guardar Turno</div>
@@ -2025,7 +2047,7 @@ function setTab(name,btn){
   if(name==='flota')renderNaves();
   if(name==='historial'){poblarFiltrosHistorial();renderHistorial();}
   if(name==='reporte'){poblarSelectNaves();} // poblarSelectNaves calls renderReporte internally
-  if(name==='turno')poblarSelectBitacora();
+  if(name==='turno'){poblarSelectBitacora();if(typeof plRebRefrescar==='function')plRebRefrescar();}
   if(name==='packing')renderPackingTab();
 }
 
@@ -2966,6 +2988,7 @@ async function guardarTurno(){
         fotos:getFotosParaGuardar(),
         cuadrillas:[...cuadrillas],detenciones:[...detenciones],
         transitos:[...transitos],malTiempos:[...malTiempos],
+        rebajas:(typeof _plRebTemp!=='undefined')?[..._plRebTemp]:[],pl_id:(typeof _plRebPlId!=='undefined')?(_plRebPlId||''):'',
         kpi:{totalTon,totalDet,detNave,detEstib,detPuerto,detClima,minOp,bruto,neto,netoPuro},
         creado:new Date().toISOString()
       };
@@ -3142,6 +3165,7 @@ function renderTimelineTurnos() {
 function limpiarFormTurno(){
   cuadrillas=[];detenciones=[];transitos=[];malTiempos=[];
   renderCuadrillas();renderRegistros();calcKPIs();
+  if(typeof plRebLimpiar==='function')plRebLimpiar();
   initFotosBodegas();
   const _fhReset=document.getElementById('kpi-first-hook');if(_fhReset){_fhReset.value='';_fhReset.dataset.manual='';}
   const _lhReset=document.getElementById('kpi-last-hook');if(_lhReset){_lhReset.value='';_lhReset.dataset.manual='';}
@@ -3210,6 +3234,7 @@ function onCambioEscalaBitacora(){
     if(hint)hint.style.display='none';
     const mp=document.getElementById('mix-carga-panel');if(mp)mp.innerHTML='';
   }
+  if(typeof plRebRefrescar==='function')plRebRefrescar();
 }
 
 // ══════════════════════════════════════════════
@@ -6507,6 +6532,164 @@ function plGuardarPrestiba(id){
   PLS.update(p);
   showAlert('✅ Prestiba guardada','success');
   renderPackingTab();
+}
+
+// ── REBAJAS POR TURNO: carga embarcada contra el PL ──
+var _plRebTemp=[];
+var _plRebPlId='';
+
+function plRebPLDeEscala(escId){
+  if(!escId)return null;
+  return PLS.getAll().filter(function(p){return p.escala_id===escId;})[0]||null;
+}
+
+function plRebEmbarcadoPrevio(plId,escId){
+  // suma bultos/tm ya rebajados en turnos guardados, por clave de ítem
+  var acc={};
+  var turnos=TA.getAll();
+  turnos.forEach(function(t){
+    if(!t.rebajas||!t.rebajas.length)return;
+    var match=(t.pl_id&&t.pl_id===plId)||(!t.pl_id&&t.escala_id&&t.escala_id===escId);
+    if(!match)return;
+    t.rebajas.forEach(function(r){
+      if(!acc[r.k])acc[r.k]={bultos:0,tm:0};
+      acc[r.k].bultos+=Number(r.bultos)||0;
+      acc[r.k].tm+=Number(r.tm)||0;
+    });
+  });
+  return acc;
+}
+
+function plRebLimpiar(){
+  _plRebTemp=[];
+  plRebRenderLista();
+  plRebRefrescar();
+}
+
+function plRebRefrescar(){
+  var card=document.getElementById('pl-reb-card');
+  if(!card)return;
+  var escEl=document.getElementById('b_escala');
+  var escId=escEl?escEl.value:'';
+  var pl=plRebPLDeEscala(escId);
+  if(!pl){
+    card.style.display='none';
+    if(_plRebPlId){_plRebTemp=[];_plRebPlId='';}
+    return;
+  }
+  if(_plRebPlId!==pl.id){_plRebTemp=[];_plRebPlId=pl.id;}
+  card.style.display='';
+  var nom=document.getElementById('pl-reb-plnombre');
+  if(nom)nom.textContent='— '+pl.nombre+(pl.nave?(' · '+pl.nave):'');
+  // poblar select de ítems con saldo actual
+  var prev=plRebEmbarcadoPrevio(pl.id,escId);
+  var tempAcc={};
+  _plRebTemp.forEach(function(r){tempAcc[r.k]=(tempAcc[r.k]||0)+r.bultos;});
+  var sel=document.getElementById('pl-reb-item');
+  if(sel){
+    var cur=sel.value;
+    var h='';
+    pl.items.forEach(function(it,idx){
+      var emb=((prev[it.k]||{}).bultos||0)+(tempAcc[it.k]||0);
+      var saldo=it.bultos-emb;
+      h+='<option value="'+idx+'"'+(String(idx)===cur?' selected':'')+'>'+it.marca+' · '+it.material+' · '+it.longitud+' — saldo '+plFmtInt(saldo)+' de '+plFmtInt(it.bultos)+'</option>';
+    });
+    sel.innerHTML=h;
+  }
+  // resumen global
+  var totEmb=0,totEmbTM=0;
+  pl.items.forEach(function(it){
+    var e=prev[it.k]||{bultos:0,tm:0};
+    totEmb+=e.bultos;totEmbTM+=e.tm;
+  });
+  var tempB=0,tempTM=0;
+  _plRebTemp.forEach(function(r){tempB+=r.bultos;tempTM+=r.tm;});
+  var res=document.getElementById('pl-reb-resumen');
+  if(res){
+    res.innerHTML='Embarcado acumulado (turnos guardados): <b>'+plFmtInt(totEmb)+'</b> bultos · '+plFmtTM(totEmbTM)+' TM — Saldo PL: <b>'+plFmtInt(pl.tot_bultos-totEmb-tempB)+'</b> bultos'+(tempB?(' · Este turno: <b>'+plFmtInt(tempB)+'</b> bultos · '+plFmtTM(tempTM)+' TM'):'');
+  }
+  plRebHint();
+  plRebRenderLista();
+}
+
+function plRebHint(){
+  var hint=document.getElementById('pl-reb-hint');
+  if(!hint)return;
+  var pl=PLS.getAll().filter(function(p){return p.id===_plRebPlId;})[0];
+  var sel=document.getElementById('pl-reb-item');
+  var compEl=document.getElementById('pl-reb-comp');
+  if(!pl||!sel||sel.value===''){hint.textContent='';return;}
+  var it=pl.items[Number(sel.value)];
+  var comp=compEl?compEl.value:'';
+  if(!it){hint.textContent='';return;}
+  var plan=((pl.prestiba||{})[it.k]||{})[comp]||0;
+  var msg='<span style="width:9px;height:9px;border-radius:3px;display:inline-block;background:'+plColorHex(it.color)+';margin-right:5px"></span>'+it.cliente+' · '+it.familia+' · '+it.texto+' — peso promedio '+plFmtTM(it.bultos>0?it.tm/it.bultos:0)+' TM/bulto';
+  if(plan>0)msg+=' · Prestiba '+comp+': <b>'+plFmtInt(plan)+'</b> bultos planificados';
+  else if(pl.prestiba)msg+=' · <span style="color:var(--yellow)">Sin plan de prestiba en '+comp+'</span>';
+  hint.innerHTML=msg;
+}
+
+function plRebAgregar(){
+  if(typeof esObservador==='function'&&esObservador()){showAlert('⚠️ Modo observador: no puede registrar','warn');return;}
+  var pl=PLS.getAll().filter(function(p){return p.id===_plRebPlId;})[0];
+  if(!pl){showAlert('⚠️ No hay PL asignado a esta escala','warn');return;}
+  var sel=document.getElementById('pl-reb-item');
+  var compEl=document.getElementById('pl-reb-comp');
+  var bEl=document.getElementById('pl-reb-bultos');
+  if(!sel||sel.value===''){showAlert('⚠️ Selecciona un ítem','warn');return;}
+  var it=pl.items[Number(sel.value)];
+  var bultos=Math.floor(Number((bEl||{}).value)||0);
+  if(!it||bultos<=0){showAlert('⚠️ Ingresa la cantidad de bultos','warn');return;}
+  var comp=compEl?compEl.value:'LH1';
+  // saldo check (advierte, no bloquea)
+  var escEl=document.getElementById('b_escala');
+  var prev=plRebEmbarcadoPrevio(pl.id,escEl?escEl.value:'');
+  var tempAcc=0;
+  _plRebTemp.forEach(function(r){if(r.k===it.k)tempAcc+=r.bultos;});
+  var saldo=it.bultos-((prev[it.k]||{}).bultos||0)-tempAcc;
+  if(bultos>saldo){
+    if(!confirm('⚠️ Estás rebajando '+bultos+' bultos pero el saldo del ítem es '+saldo+'.\n¿Registrar de todas formas?'))return;
+  }
+  var pesoProm=it.bultos>0?it.tm/it.bultos:0;
+  // consolidar si ya existe misma clave+compartimento en el turno
+  var ex=_plRebTemp.filter(function(r){return r.k===it.k&&r.comp===comp;})[0];
+  if(ex){
+    ex.bultos+=bultos;
+    ex.tm=Math.round(ex.bultos*pesoProm*1000)/1000;
+  }else{
+    _plRebTemp.push({
+      k:it.k,comp:comp,marca:it.marca,cliente:it.cliente,color:it.color,
+      familia:it.familia,material:it.material,longitud:it.longitud,
+      bultos:bultos,tm:Math.round(bultos*pesoProm*1000)/1000
+    });
+  }
+  if(bEl)bEl.value='';
+  plRebRefrescar();
+}
+
+function plRebQuitar(i){
+  _plRebTemp.splice(Number(i),1);
+  plRebRefrescar();
+}
+
+function plRebRenderLista(){
+  var cont=document.getElementById('pl-reb-lista');
+  if(!cont)return;
+  if(!_plRebTemp.length){cont.innerHTML='<div style="color:var(--text3);font-size:12px">Sin rebajas registradas en este turno.</div>';return;}
+  var h='<table style="width:100%;border-collapse:collapse;font-size:12px">'+
+    '<tr style="color:var(--text3);text-align:left"><th style="padding:4px 6px">Comp.</th><th style="padding:4px 6px">Marca</th><th style="padding:4px 6px">Material</th><th style="padding:4px 6px">Longitud</th><th style="padding:4px 6px;text-align:right">Bultos</th><th style="padding:4px 6px;text-align:right">TM</th><th></th></tr>';
+  _plRebTemp.forEach(function(r,i){
+    h+='<tr style="border-top:1px solid var(--border2)">'+
+      '<td style="padding:4px 6px;font-weight:700;color:'+(r.comp.indexOf('TD')===0?'var(--yellow)':'var(--blue)')+'">'+r.comp+'</td>'+
+      '<td style="padding:4px 6px;white-space:nowrap"><span style="width:9px;height:9px;border-radius:3px;display:inline-block;background:'+plColorHex(r.color)+';margin-right:5px"></span>'+r.marca+'</td>'+
+      '<td style="padding:4px 6px">'+r.material+'</td>'+
+      '<td style="padding:4px 6px">'+r.longitud+'</td>'+
+      '<td style="padding:4px 6px;text-align:right">'+plFmtInt(r.bultos)+'</td>'+
+      '<td style="padding:4px 6px;text-align:right">'+plFmtTM(r.tm)+'</td>'+
+      '<td style="padding:4px 6px;text-align:right"><button data-i="'+i+'" onclick="plRebQuitar(this.dataset.i)" class="btn-del" style="background:var(--red-dim);color:var(--red);border:1px solid var(--border);border-radius:6px;padding:2px 8px;cursor:pointer;font-size:11px">✕</button></td></tr>';
+  });
+  h+='</table>';
+  cont.innerHTML=h;
 }
 
 function plToggleDetalle(id){
