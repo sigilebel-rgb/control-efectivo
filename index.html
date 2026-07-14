@@ -6001,6 +6001,17 @@ const PLS={
     this.save(this.getAll().filter(function(p){return p.id!==id;}));
     if(typeof _sbOnline!=='undefined'&&_sbOnline){SB.delete('ce_packing',id).catch(function(){});}
   },
+  update(pl){
+    var arr=this.getAll();
+    var i=-1;
+    for(var j=0;j<arr.length;j++){if(arr[j].id===pl.id){i=j;break;}}
+    if(i>=0){arr[i]=pl;}else{arr.unshift(pl);}
+    this.save(arr);
+    if(typeof _sbOnline!=='undefined'&&_sbOnline){
+      SB.upsert('ce_packing',{id:pl.id,created:pl.creado,nombre:pl.nombre,nave_id:pl.nave_id||'',data_json:pl})
+        .catch(function(e){console.error('[SB]packing upd',e);});
+    }
+  },
   async syncFromDB(){
     if(typeof _sbOnline==='undefined'||!_sbOnline)return;
     var rows=await SB.select('ce_packing','limit=50');
@@ -6217,10 +6228,12 @@ function renderPackingTab(){
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">'+
         '<div><div style="font-weight:700">📦 '+p.nombre+'</div>'+
         '<div style="font-size:11px;color:var(--text3)">'+(p.nave?('Nave: '+p.nave):'Nave por asignar')+' · Cargado '+String(p.creado||'').slice(0,10)+' · '+plFmtInt(p.tot_bultos)+' bultos · '+plFmtTM(p.tot_tm)+' TM · '+p.items.length+' ítems</div></div>'+
-        '<div style="display:flex;gap:6px">'+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+        '<button data-id="'+p.id+'" onclick="plAsignarNaveUI(this.dataset.id)" style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px">🚢 '+(p.nave?'Cambiar nave':'Asignar nave')+'</button>'+
         '<button data-id="'+p.id+'" onclick="plToggleDetalle(this.dataset.id)" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px">👁 Ver</button>'+
         '<button data-id="'+p.id+'" onclick="plEliminar(this.dataset.id)" class="btn-del" style="background:var(--red-dim);color:var(--red);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px">🗑</button>'+
         '</div></div>'+
+        '<div id="pl-nave-'+p.id+'" style="display:none;margin-top:8px"></div>'+
         '<div id="pl-det-'+p.id+'" style="display:none;margin-top:8px"></div></div>';
     });
     cont.innerHTML=h;
@@ -6229,6 +6242,57 @@ function renderPackingTab(){
     var arr2=PLS.getAll();
     if(arr2.length!==arr.length){renderPackingTab();}
   }).catch(function(){});
+}
+
+function plAsignarNaveUI(id){
+  if(typeof esObservador==='function'&&esObservador()){showAlert('⚠️ Modo observador: no puede asignar','warn');return;}
+  var box=document.getElementById('pl-nave-'+id);
+  if(!box)return;
+  if(box.style.display!=='none'){box.style.display='none';box.innerHTML='';return;}
+  var naves=NA.getAll();
+  if(!naves.length){showAlert('⚠️ No hay naves en la flota. Crea la nave primero en Flota & Viajes.','warn');return;}
+  var p=PLS.getAll().filter(function(x){return x.id===id;})[0];
+  var h='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px">'+
+    '<span style="font-size:12px;color:var(--text2)">Asignar a:</span>'+
+    '<select id="pl-nave-sel-'+id+'" style="background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12px">';
+  naves.forEach(function(n){
+    var sel=(p&&p.nave_id===n.id)?' selected':'';
+    h+='<option value="'+n.id+'"'+sel+'>'+n.nombre+'</option>';
+  });
+  h+='</select>'+
+    '<button data-id="'+id+'" onclick="plAsignarNave(this.dataset.id)" style="background:var(--blue);color:#121110;font-weight:700;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px">Confirmar</button>';
+  if(p&&p.nave_id){
+    h+='<button data-id="'+id+'" onclick="plQuitarNave(this.dataset.id)" style="background:var(--bg4);color:var(--text2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px">Quitar asignación</button>';
+  }
+  h+='</div>';
+  box.innerHTML=h;
+  box.style.display='';
+}
+
+function plAsignarNave(id){
+  var sel=document.getElementById('pl-nave-sel-'+id);
+  var naveId=((sel||{}).value||'');
+  if(!naveId)return;
+  var nave=NA.getAll().filter(function(n){return n.id===naveId;})[0];
+  if(!nave){showAlert('⚠️ Nave no encontrada','warn');return;}
+  var p=PLS.getAll().filter(function(x){return x.id===id;})[0];
+  if(!p)return;
+  p.nave_id=nave.id;
+  p.nave=nave.nombre;
+  PLS.update(p);
+  renderPackingTab();
+  showAlert('✅ Packing List asignado a '+nave.nombre,'success');
+}
+
+function plQuitarNave(id){
+  var p=PLS.getAll().filter(function(x){return x.id===id;})[0];
+  if(!p)return;
+  if(!confirm('¿Quitar la asignación de nave de "'+p.nombre+'"?'))return;
+  p.nave_id='';
+  p.nave='';
+  PLS.update(p);
+  renderPackingTab();
+  showAlert('✅ Asignación de nave eliminada','success');
 }
 
 function plToggleDetalle(id){
