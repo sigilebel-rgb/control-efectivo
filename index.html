@@ -506,6 +506,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     <button class="tab" onclick="setTab('turno',this)">📋 Bitácora de Turno</button>
     <button class="tab" onclick="setTab('historial',this)">📂 Historial</button>
     <button class="tab" onclick="setTab('reporte',this)">📊 Reporte Nave</button>
+    <button class="tab" onclick="setTab('packing',this)">📦 Packing List</button>
     
   </div>
 
@@ -1045,6 +1046,34 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   <option>Mal tiempo</option><option>Marejada</option><option>Niebla</option>
   <option>Lluvia</option><option>Viento excesivo</option><option>Otro</option>
 </datalist>
+
+<!-- ══════ TAB: PACKING LIST ══════ -->
+<div id="tab-packing" class="hidden">
+
+  <div class="card">
+    <div class="card-title">📦 Importar Packing List
+      <span style="font-size:11px;font-weight:400;color:var(--text2)">— Sube el PL pre-embarque (hoja BD) para control de saldos</span>
+    </div>
+    <div id="pl-drop-zone" style="border:2px dashed var(--border);border-radius:10px;padding:1.75rem;text-align:center;cursor:pointer;transition:all .2s"
+      ondragover="event.preventDefault();this.style.borderColor='var(--blue)';this.style.background='rgba(212,175,55,.05)'"
+      ondragleave="this.style.borderColor='var(--border)';this.style.background=''"
+      ondrop="handlePLDrop(event)"
+      onclick="document.getElementById('pl-file-input').click()">
+      <div style="font-size:30px;margin-bottom:6px">📦</div>
+      <div style="font-weight:700;color:var(--text);font-size:13px">Arrastra el Packing List aquí o haz clic para seleccionar</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:3px">Formato .xlsx · Lee la hoja de detalle por bulto y agrupa por marca + material + longitud</div>
+      <input type="file" id="pl-file-input" accept=".xlsx,.xls" style="display:none" onchange="handlePLFile(this.files[0]);this.value=''">
+    </div>
+  </div>
+
+  <div class="card" id="pl-preview-card" style="display:none"></div>
+
+  <div class="card">
+    <div class="card-title">🗂 Packing Lists guardados</div>
+    <div id="pl-lista"><div style="color:var(--text3);font-size:12px">No hay packing lists guardados.</div></div>
+  </div>
+
+</div>
 
 <script>
 // ══════════════════════════════════════════════
@@ -1987,7 +2016,7 @@ function pedirCambioPass(){
 // TABS
 // ══════════════════════════════════════════════
 function setTab(name,btn){
-  ['flota','turno','historial','reporte'].forEach(t=>{
+  ['flota','turno','historial','reporte','packing'].forEach(t=>{
     document.getElementById('tab-'+t).classList.add('hidden');
   });
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
@@ -1997,6 +2026,7 @@ function setTab(name,btn){
   if(name==='historial'){poblarFiltrosHistorial();renderHistorial();}
   if(name==='reporte'){poblarSelectNaves();} // poblarSelectNaves calls renderReporte internally
   if(name==='turno')poblarSelectBitacora();
+  if(name==='packing')renderPackingTab();
 }
 
 // ══════════════════════════════════════════════
@@ -5940,6 +5970,289 @@ document.addEventListener('change',function(e){
     }
   }
 },true);
+</script>
+<script>
+// ══════════════════════════════════════════════
+// PACKING LIST — IMPORTACIÓN Y CONTROL DE SALDOS (Fase 1)
+// ══════════════════════════════════════════════
+var _plPreview=null;
+var PL_COLORS={'plomo':'#9aa0a6','verde':'#2ea043','marron':'#8B5E3C','naranja':'#f0883e','azul':'#388bfd','rojo':'#f85149','amarillo':'#d29922','blanco':'#e6e6e6','negro':'#555'};
+
+function plColorHex(c){
+  var k=String(c||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+  return PL_COLORS[k]||'#7d766a';
+}
+function plFmtTM(x){var n=Number(x)||0;return n.toLocaleString('es-CL',{minimumFractionDigits:3,maximumFractionDigits:3});}
+function plFmtInt(x){return (Number(x)||0).toLocaleString('es-CL');}
+
+const PLS={
+  key:'ce_packing',
+  getAll(){return DB.get(this.key)||[];},
+  save(arr){DB.set(this.key,arr);},
+  add(pl){
+    var arr=this.getAll().filter(function(p){return p.id!==pl.id;});
+    arr.unshift(pl);this.save(arr);
+    if(typeof _sbOnline!=='undefined'&&_sbOnline){
+      SB.upsert('ce_packing',{id:pl.id,created:pl.creado,nombre:pl.nombre,nave_id:pl.nave_id||'',data_json:pl})
+        .catch(function(e){console.error('[SB]packing',e);});
+    }
+  },
+  del(id){
+    this.save(this.getAll().filter(function(p){return p.id!==id;}));
+    if(typeof _sbOnline!=='undefined'&&_sbOnline){SB.delete('ce_packing',id).catch(function(){});}
+  },
+  async syncFromDB(){
+    if(typeof _sbOnline==='undefined'||!_sbOnline)return;
+    var rows=await SB.select('ce_packing','limit=50');
+    if(rows&&rows.length){
+      var loc=this.getAll();
+      var ids={};loc.forEach(function(p){ids[p.id]=1;});
+      var nuevos=0;
+      rows.forEach(function(r){
+        var pl=r.data_json||null;
+        if(pl&&pl.id&&!ids[pl.id]){loc.push(pl);ids[pl.id]=1;nuevos++;}
+      });
+      if(nuevos>0){loc.sort(function(a,b){return String(b.creado||'').localeCompare(String(a.creado||''));});this.save(loc);}
+    }
+  }
+};
+
+function handlePLDrop(ev){
+  ev.preventDefault();
+  var dz=document.getElementById('pl-drop-zone');
+  if(dz){dz.style.borderColor='var(--border)';dz.style.background='';}
+  var file=ev.dataTransfer.files[0];
+  if(file)handlePLFile(file);
+}
+
+function handlePLFile(file){
+  if(!file)return;
+  if(!file.name.match(/\.xlsx?$/i)){showAlert('⚠️ Solo se aceptan archivos .xlsx','warn');return;}
+  var reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      var _XLSX=window.XLSX||XLSX;
+      var wb=_XLSX.read(e.target.result,{type:'array',raw:true});
+      var res=plParseWorkbook(wb,_XLSX);
+      if(!res){showAlert('⚠️ No se encontró una hoja de detalle válida (se esperan columnas Material, TM, FAMILIA)','warn');return;}
+      res.nombreArchivo=file.name;
+      _plPreview=res;
+      plRenderPreview(res);
+      showAlert('✅ Packing List leído: '+plFmtInt(res.totBultos)+' bultos · '+plFmtTM(res.totTM)+' TM','success');
+    }catch(err){
+      console.error('[PL] parse',err);
+      showAlert('❌ Error leyendo el archivo: '+err.message,'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function plParseWorkbook(wb,_XLSX){
+  // Buscar hoja detalle: preferir 'BD', si no, la primera con headers Material+TM+FAMILIA
+  var candidatos=[];
+  if(wb.SheetNames.indexOf('BD')>=0)candidatos.push('BD');
+  wb.SheetNames.forEach(function(sn){if(sn!=='BD')candidatos.push(sn);});
+  for(var c=0;c<candidatos.length;c++){
+    var ws=wb.Sheets[candidatos[c]];
+    if(!ws)continue;
+    var raw=_XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
+    if(!raw||raw.length<2)continue;
+    // buscar fila de headers en las primeras 5 filas
+    for(var hr=0;hr<Math.min(5,raw.length);hr++){
+      var hdr=raw[hr].map(function(h){return String(h||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();});
+      var col={};
+      hdr.forEach(function(h,i){
+        if(h==='material'&&col.material===undefined)col.material=i;
+        if(h.indexOf('texto')===0&&col.texto===undefined)col.texto=i;
+        if(h==='longitud'&&col.longitud===undefined)col.longitud=i;
+        if(h==='tm'&&col.tm===undefined)col.tm=i;
+        if(h==='per'&&col.per===undefined)col.per=i;
+        if(h.indexOf('cliente')===0&&col.cliente===undefined)col.cliente=i;
+        if(h==='color'&&col.color===undefined)col.color=i;
+        if(h==='familia'&&col.familia===undefined)col.familia=i;
+        if(h==='pedido'&&col.pedido===undefined)col.pedido=i;
+      });
+      if(col.material!==undefined&&col.tm!==undefined&&col.familia!==undefined){
+        return plAgrupar(raw,hr+1,col,candidatos[c]);
+      }
+    }
+  }
+  return null;
+}
+
+function plAgrupar(raw,inicio,col,hoja){
+  var items={},orden=[];
+  var totB=0,totTM=0;
+  for(var i=inicio;i<raw.length;i++){
+    var r=raw[i];
+    var mat=String((r[col.material]!==undefined?r[col.material]:'')||'').trim();
+    if(!mat)continue;
+    var tm=Number(r[col.tm]);if(isNaN(tm))tm=parseFloat(String(r[col.tm]).replace(',','.'))||0;
+    var marca=col.per!==undefined?String(r[col.per]||'').trim():'';
+    var lon=col.longitud!==undefined?String(r[col.longitud]||'').trim():'';
+    var k=marca+'|'+mat+'|'+lon;
+    if(!items[k]){
+      items[k]={
+        k:k,marca:marca,
+        cliente:col.cliente!==undefined?String(r[col.cliente]||'').trim():'',
+        color:col.color!==undefined?String(r[col.color]||'').trim():'',
+        familia:col.familia!==undefined?String(r[col.familia]||'').trim():'',
+        material:mat,
+        texto:col.texto!==undefined?String(r[col.texto]||'').trim():'',
+        longitud:lon,
+        pedido:col.pedido!==undefined?String(r[col.pedido]||'').trim():'',
+        bultos:0,tm:0
+      };
+      orden.push(k);
+    }
+    items[k].bultos+=1;
+    items[k].tm+=tm;
+    totB+=1;totTM+=tm;
+  }
+  if(!orden.length)return null;
+  var lista=orden.map(function(k){var it=items[k];it.tm=Math.round(it.tm*1000)/1000;return it;});
+  lista.sort(function(a,b){
+    return (a.marca+a.familia+a.material+a.longitud).localeCompare(b.marca+b.familia+b.material+b.longitud);
+  });
+  return {hoja:hoja,items:lista,totBultos:totB,totTM:Math.round(totTM*1000)/1000};
+}
+
+function plResumenHTML(pl){
+  var porFam={},porMarca={};
+  pl.items.forEach(function(it){
+    if(!porFam[it.familia])porFam[it.familia]={b:0,tm:0};
+    porFam[it.familia].b+=it.bultos;porFam[it.familia].tm+=it.tm;
+    var mk=it.marca+'·'+it.cliente+'·'+it.color;
+    if(!porMarca[mk])porMarca[mk]={marca:it.marca,cliente:it.cliente,color:it.color,b:0,tm:0};
+    porMarca[mk].b+=it.bultos;porMarca[mk].tm+=it.tm;
+  });
+  var h='<div style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0">';
+  h+='<div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 12px"><div style="font-size:10px;color:var(--text3)">TOTAL</div><div style="font-weight:700">'+plFmtInt(pl.totBultos)+' bultos · '+plFmtTM(pl.totTM)+' TM</div></div>';
+  Object.keys(porFam).forEach(function(f){
+    h+='<div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 12px"><div style="font-size:10px;color:var(--text3)">'+(f||'SIN FAMILIA').toUpperCase()+'</div><div style="font-weight:700">'+plFmtInt(porFam[f].b)+' bultos · '+plFmtTM(porFam[f].tm)+' TM</div></div>';
+  });
+  h+='</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">';
+  Object.keys(porMarca).forEach(function(mk){
+    var m=porMarca[mk];
+    h+='<div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 12px;display:flex;align-items:center;gap:8px">'+
+      '<span style="width:14px;height:14px;border-radius:4px;display:inline-block;background:'+plColorHex(m.color)+';border:1px solid var(--border)"></span>'+
+      '<div><div style="font-size:10px;color:var(--text3)">'+m.marca+' · '+m.cliente+'</div><div style="font-weight:700;font-size:12px">'+plFmtInt(m.b)+' bultos · '+plFmtTM(m.tm)+' TM</div></div></div>';
+  });
+  h+='</div>';
+  return h;
+}
+
+function plTablaHTML(items){
+  var h='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+  h+='<tr style="color:var(--text3);text-align:left"><th style="padding:4px 6px">Marca</th><th style="padding:4px 6px">Cliente</th><th style="padding:4px 6px">Familia</th><th style="padding:4px 6px">Material</th><th style="padding:4px 6px">Descripción</th><th style="padding:4px 6px">Longitud</th><th style="padding:4px 6px;text-align:right">Bultos</th><th style="padding:4px 6px;text-align:right">TM</th></tr>';
+  items.forEach(function(it){
+    h+='<tr style="border-top:1px solid var(--border2)">'+
+      '<td style="padding:4px 6px;white-space:nowrap"><span style="width:10px;height:10px;border-radius:3px;display:inline-block;background:'+plColorHex(it.color)+';margin-right:6px"></span>'+it.marca+'</td>'+
+      '<td style="padding:4px 6px">'+it.cliente+'</td>'+
+      '<td style="padding:4px 6px">'+it.familia+'</td>'+
+      '<td style="padding:4px 6px">'+it.material+'</td>'+
+      '<td style="padding:4px 6px;color:var(--text2)">'+it.texto+'</td>'+
+      '<td style="padding:4px 6px">'+it.longitud+'</td>'+
+      '<td style="padding:4px 6px;text-align:right">'+plFmtInt(it.bultos)+'</td>'+
+      '<td style="padding:4px 6px;text-align:right">'+plFmtTM(it.tm)+'</td></tr>';
+  });
+  h+='</table></div>';
+  return h;
+}
+
+function plRenderPreview(pl){
+  var card=document.getElementById('pl-preview-card');
+  if(!card)return;
+  var nombreDef=(pl.nombreArchivo||'Packing List').replace(/\.xlsx?$/i,'').replace(/_/g,' ');
+  var h='<div class="card-title">👁 Vista previa — hoja "'+pl.hoja+'" · '+pl.items.length+' ítems (marca + material + longitud)</div>';
+  h+=plResumenHTML(pl);
+  h+='<div style="display:flex;gap:8px;align-items:center;margin:10px 0;flex-wrap:wrap">'+
+    '<input id="pl-nombre" type="text" value="'+nombreDef+'" placeholder="Nombre del packing list" style="flex:1;min-width:220px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text)">'+
+    '<button onclick="guardarPL()" style="background:var(--blue);color:#121110;font-weight:700;border:none;border-radius:8px;padding:9px 16px;cursor:pointer">💾 Guardar Packing List</button>'+
+    '<button onclick="cancelarPL()" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border);border-radius:8px;padding:9px 14px;cursor:pointer">Cancelar</button></div>';
+  h+='<div style="font-size:11px;color:var(--text3);margin-bottom:6px">La nave se asigna después, cuando esté confirmada. La distribución teórica LH/TD se hará en la fase de prestiba.</div>';
+  h+=plTablaHTML(pl.items);
+  card.innerHTML=h;
+  card.style.display='';
+}
+
+function cancelarPL(){
+  _plPreview=null;
+  var card=document.getElementById('pl-preview-card');
+  if(card){card.style.display='none';card.innerHTML='';}
+}
+
+function guardarPL(){
+  if(!_plPreview){showAlert('⚠️ No hay packing list para guardar','warn');return;}
+  var el=document.getElementById('pl-nombre');
+  var nombre=((el||{}).value||'').trim()||'Packing List';
+  var pl={
+    id:'pl'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+    nombre:nombre,
+    archivo:_plPreview.nombreArchivo||'',
+    creado:new Date().toISOString(),
+    nave_id:'',
+    nave:'',
+    escala_id:null,
+    items:_plPreview.items,
+    tot_bultos:_plPreview.totBultos,
+    tot_tm:_plPreview.totTM
+  };
+  PLS.add(pl);
+  cancelarPL();
+  renderPackingTab();
+  showAlert('✅ Packing List guardado: '+nombre,'success');
+}
+
+function renderPackingTab(){
+  var cont=document.getElementById('pl-lista');
+  if(!cont)return;
+  var arr=PLS.getAll();
+  if(!arr.length){
+    cont.innerHTML='<div style="color:var(--text3);font-size:12px">No hay packing lists guardados.</div>';
+  }else{
+    var h='';
+    arr.forEach(function(p){
+      h+='<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">'+
+        '<div><div style="font-weight:700">📦 '+p.nombre+'</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+(p.nave?('Nave: '+p.nave):'Nave por asignar')+' · Cargado '+String(p.creado||'').slice(0,10)+' · '+plFmtInt(p.tot_bultos)+' bultos · '+plFmtTM(p.tot_tm)+' TM · '+p.items.length+' ítems</div></div>'+
+        '<div style="display:flex;gap:6px">'+
+        '<button data-id="'+p.id+'" onclick="plToggleDetalle(this.dataset.id)" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px">👁 Ver</button>'+
+        '<button data-id="'+p.id+'" onclick="plEliminar(this.dataset.id)" class="btn-del" style="background:var(--red-dim);color:var(--red);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px">🗑</button>'+
+        '</div></div>'+
+        '<div id="pl-det-'+p.id+'" style="display:none;margin-top:8px"></div></div>';
+    });
+    cont.innerHTML=h;
+  }
+  PLS.syncFromDB().then(function(){
+    var arr2=PLS.getAll();
+    if(arr2.length!==arr.length){renderPackingTab();}
+  }).catch(function(){});
+}
+
+function plToggleDetalle(id){
+  var det=document.getElementById('pl-det-'+id);
+  if(!det)return;
+  if(det.style.display==='none'){
+    var p=PLS.getAll().filter(function(x){return x.id===id;})[0];
+    if(!p)return;
+    det.innerHTML=plResumenHTML({items:p.items,totBultos:p.tot_bultos,totTM:p.tot_tm})+plTablaHTML(p.items);
+    det.style.display='';
+  }else{
+    det.style.display='none';det.innerHTML='';
+  }
+}
+
+function plEliminar(id){
+  if(typeof esObservador==='function'&&esObservador()){showAlert('⚠️ Modo observador: no puede eliminar','warn');return;}
+  var p=PLS.getAll().filter(function(x){return x.id===id;})[0];
+  if(!p)return;
+  if(!confirm('¿Eliminar el packing list "'+p.nombre+'"? Esta acción no se puede deshacer.'))return;
+  PLS.del(id);
+  renderPackingTab();
+  showAlert('🗑 Packing List eliminado','success');
+}
 </script>
 <script>
 if('serviceWorker' in navigator && location.protocol==='https:'){
